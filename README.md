@@ -48,8 +48,8 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
 ### 📊 GitHub Stats
 
 <p align="left">
-  <img src="https://github-readme-stats.vercel.app/api/top-langs/?username=douglasbaldon&layout=compact&theme=tokyonight" height="160"/>
-  <img src="https://github-readme-stats.vercel.app/api?username=douglasbaldon&show_icons=true&theme=tokyonight" height="160"/>
+  <img src="https://github-readme-stats.vercel.app/api/top-langs/?username=obaldon&layout=compact&theme=tokyonight" height="160"/>
+  <img src="https://github-readme-stats.vercel.app/api?username=obaldon&show_icons=true&theme=tokyonight" height="160"/>
 </p>
 
 ---
@@ -57,7 +57,7 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
 ### 🏆 Conquistas
 
 <p align="center">
-  <img src="https://github-profile-trophy.vercel.app/?username=douglasbaldon&theme=tokyonight&row=1&no-frame=true" />
+  <img src="https://github-profile-trophy.vercel.app/?username=obaldon&theme=tokyonight&row=1&no-frame=true" />
 </p>
 
 ---
