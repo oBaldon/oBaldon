@@ -1,13 +1,14 @@
 <h1 align="center">Douglas Baldon - AI & Machine Learning Specialist 🤖📊</h1>
 
-### 🧠 Sobre mim
+### 🧠 About Me
 
-Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligência Artificial e Machine Learning. Atuo na criação de soluções inteligentes que integram IA, análise de dados e engenharia de software para resolver problemas reais. Tenho experiência prática com LLMs, modelos preditivos, aprendizado supervisionado e não supervisionado, pipelines de dados e aplicações full-stack com foco em inteligência.
+I'm a Computer Science graduate from UTFPR, passionate about Artificial Intelligence and Machine Learning. I develop intelligent solutions that integrate AI, data analysis, and software engineering to solve real-world challenges. I have hands-on experience with LLMs, predictive models, supervised and unsupervised learning, data pipelines, and full-stack applications focused on intelligence.
 
 ---
 
-### 🧪 Especialidades em IA e Dados
+### 🧪 AI & Data Specialties
 
+#### 🧠 Frameworks, Libraries & Models
 <p align="left">
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/python/python-original.svg" width="40" />
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/tensorflow/tensorflow-original.svg" width="40" />
@@ -15,11 +16,44 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/numpy/numpy-original.svg" width="40" />
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/pandas/pandas-original.svg" width="40" />
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/matplotlib/matplotlib-original.svg" width="40" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/scikit-learn/scikit-learn-original.svg" width="40" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/keras/keras-original.svg" width="40" />
 </p>
+
+#### 🗣️ LLMs & NLP
+<p align="left">
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/huggingface/huggingface-original.svg" width="40" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/fastapi/fastapi-original.svg" width="40" />
+  <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/docker/docker-original.svg" width="40" />
+</p>
+
+- 🔍 Models: `LLaMA`, `GPT`, `Mistral`, `Whisper`, `BERT`, `spaCy`
+- 🧩 Tasks: Text classification, summarization, sentiment analysis, question answering, named entity recognition, semantic embeddings
+
+#### 📊 Data Processing & Modeling
+
+- Efficient pipelines for ML models
+- Feature engineering and variable selection
+- Optimization with GridSearch, RandomSearch, and Optuna
+- Model evaluation (cross-validation, ROC, F1, etc.)
+
+#### 🤖 Machine Learning
+
+- Supervised models (Regression, Decision Trees, Random Forests, SVM, etc.)
+- Unsupervised models (KMeans, PCA, DBSCAN)
+- Deep Learning models (RNN, LSTM, CNN)
+- Model deployment with REST APIs (FastAPI/Flask)
+
+#### 🔄 MLOps & Tools
+
+- Model monitoring
+- Reproducible experiments using MLflow and DVC
+- Deployments in Docker containers
+- Database integration and ETL pipelines in Python
 
 ---
 
-### 🌐 Desenvolvimento Web & APIs
+### 🌐 Web Development & APIs
 
 <p align="left">
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/javascript/javascript-original.svg" width="40" />
@@ -45,7 +79,7 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
 
 ---
 
-### 💾 Bancos de Dados & DevOps
+### 💾 Databases & DevOps
 
 <p align="left">
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/sqlite/sqlite-original.svg" width="40" />
@@ -69,6 +103,7 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/postman/postman-original.svg" width="40"/>     
 </p>
 
+---
 
 ### 📊 GitHub Stats
 
@@ -78,7 +113,7 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
 
 ---
 
-### 🏆 Conquistas
+### 🏆 Achievements
 
 <p align="center">
   <img src="https://github-profile-trophy.vercel.app/?username=obaldon&theme=tokyonight&row=1&no-frame=true" />
@@ -86,11 +121,11 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
 
 ---
 
-### 📫 Contato
+### 📫 Contact
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/douglasbaldon)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/douglasbaldon)  
 [![Gmail](https://img.shields.io/badge/Gmail-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:douglas@gmail.com)
 
 ---
 
-> "Transformar dados em soluções inteligentes não é apenas código, é visão." – Douglas Baldon
+> "Turning data into intelligent solutions is not just about code — it's about vision." – Douglas Baldon
