@@ -93,12 +93,4 @@ Sou formado em Ciência da Computação pela UTFPR e apaixonado por Inteligênci
 
 ---
 
-### 🚀 Projetos em destaque
-
-- 🔍 **Heimdall** – Sistema local com LLM para interpretação contextual de transcrições.
-- 🎮 **My Clean Park** – Jogo educacional com IA adaptativa.
-- 📡 **Real-time Web Tracker** – Captura e análise de dados em tempo real com WebSocket, Node.js e SQLite.
-
----
-
 > "Transformar dados em soluções inteligentes não é apenas código, é visão." – Douglas Baldon
