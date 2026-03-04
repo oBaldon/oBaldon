@@ -3,7 +3,7 @@ name: update-algo-viz
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 3 * * *"  # diariamente (UTC). Ajuste se desejar.
+    - cron: "17 3 * * *"
   push:
     branches: ["main"]
     paths:
@@ -20,6 +20,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync with origin/main
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -41,3 +49,5 @@ jobs:
         with:
           commit_message: "chore: update algorithm visualizations"
           file_pattern: "assets/*.svg"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
