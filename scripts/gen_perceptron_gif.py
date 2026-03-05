@@ -18,7 +18,7 @@ CANVAS_W, CANVAS_H = 980, 360
 N_TOTAL = 360          # total de pontos (balanceado)
 NOISE = 0.95
 SEP = 1.35             # separação moderada
-HARD_FRAC = 0.35       # fração de pontos perto da fronteira, mas com rótulo consistente
+HARD_FRAC = 0.25       # fração de pontos perto da fronteira, mas com rótulo consistente
 MARGIN = 0.22          # quão perto da fronteira os "hard points" ficam (menor = mais difícil, ainda separável)
 
 EPOCHS = 22
