@@ -16,9 +16,9 @@ from PIL import Image, ImageDraw
 CANVAS_W, CANVAS_H = 980, 360
 
 N_TOTAL = 420
-NOISE_X = 1.00           # ruído nas features (não quebra separabilidade por si só)
-MARGIN = 0.30            # margem mínima do professor (maior => mais separável)
-LABEL_FLIP_P = 0.04      # prob. de inverter rótulo (0 => separável; >0 => não separável)
+NOISE_X = 1.00           # ruído nas features
+MARGIN = 0.30            # força |w*·x + b*| >= MARGIN
+LABEL_FLIP_P = 0.04      # 0 => separável; >0 => não separável (teoria permite não chegar a 100%)
 
 EPOCHS = 26
 LR = 0.05
@@ -52,18 +52,16 @@ BAR_BG = (17, 24, 39)
 BAR_FILL = (34, 197, 94)
 
 # Classes
-C_NEG = (239, 68, 68)     # -1
-C_POS = (37, 99, 235)     # +1
-C_LINE = (34, 197, 94)    # linha "pocket" (best)
-C_LINE_CUR = (56, 189, 248)  # linha atual (opcional, azul claro)
+C_NEG = (239, 68, 68)       # -1
+C_POS = (37, 99, 235)       # +1
+C_LINE_POCKET = (34, 197, 94)   # pocket (best) — verde
+C_LINE_CUR = (56, 189, 248)     # atual — azul claro
 
 
 @dataclass(frozen=True)
 class Snap:
-    # estado atual (perceptron)
     w: np.ndarray
     b: float
-    # melhor estado observado (pocket)
     w_best: np.ndarray
     b_best: float
     best_acc: float
@@ -94,41 +92,75 @@ def gen_dataset_teacher(
     label_flip_p: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """
-    Gera dados a partir de um hiperplano "professor" (w*, b*).
-    - Garante margem mínima (se label_flip_p==0, separável).
-    - Se label_flip_p>0, introduz não separabilidade (ruído de rótulo).
-    Retorna X, y, w*, b*.
+    Dataset por hiperplano professor (w*, b*).
+    - Gera pontos X ~ N(0, noise_x) e aceita apenas se |w*·x + b*| >= margin (margem).
+    - Rotula pelo sinal do professor.
+    - Opcional: ruído de rótulo (label_flip_p), quebrando separabilidade.
+    - Balanceia aproximadamente classes aceitando de forma controlada.
+    Retorna: X, y, w*, b*.
     """
-    # professor (direção aleatória normalizada)
+    # professor
     w_star = rng.normal(0.0, 1.0, size=(2,))
     w_star = w_star / (np.linalg.norm(w_star) + 1e-12)
     b_star = float(rng.normal(0.0, 0.25))
 
-    X = []
-    y = []
+    X_list: List[np.ndarray] = []
+    y_list: List[int] = []
 
-    # Rejeição: força |w*x + b| >= margin
+    # tenta balancear: metade +1, metade -1
+    target_pos = n_total // 2
+    target_neg = n_total - target_pos
+    got_pos = 0
+    got_neg = 0
+
     tries = 0
-    while len(X) < n_total and tries < n_total * 400:
+    max_tries = n_total * 800
+    while (got_pos < target_pos or got_neg < target_neg) and tries < max_tries:
         tries += 1
         x = rng.normal(0.0, noise_x, size=(2,))
         s = float(np.dot(w_star, x) + b_star)
+
         if abs(s) < margin:
             continue
+
         yi = 1 if s >= 0 else -1
-        X.append(x)
-        y.append(yi)
+        if yi == 1:
+            if got_pos >= target_pos:
+                continue
+            got_pos += 1
+        else:
+            if got_neg >= target_neg:
+                continue
+            got_neg += 1
 
-    X = np.array(X, dtype=float)
-    y = np.array(y, dtype=int)
+        X_list.append(x.astype(float))
+        y_list.append(int(yi))
 
-    # Ruído de rótulo (quebra separabilidade)
-    if label_flip_p > 0:
+    if len(X_list) < n_total:
+        # fallback: completa sem balanceamento estrito
+        while len(X_list) < n_total and tries < max_tries * 2:
+            tries += 1
+            x = rng.normal(0.0, noise_x, size=(2,))
+            s = float(np.dot(w_star, x) + b_star)
+            if abs(s) < margin:
+                continue
+            yi = 1 if s >= 0 else -1
+            X_list.append(x.astype(float))
+            y_list.append(int(yi))
+
+    X = np.vstack(X_list).astype(float)
+    y = np.array(y_list, dtype=int)
+
+    # Ruído de rótulo (não separável)
+    if label_flip_p > 0.0:
         flip = rng.random(size=y.shape[0]) < label_flip_p
+        # garante pelo menos 1 flip para evitar "por acaso separável"
+        if not flip.any():
+            flip[rng.integers(0, y.shape[0])] = True
         y = y.copy()
         y[flip] *= -1
 
-    # Balanceamento leve (opcional): embaralha
+    # embaralhar
     idx = rng.permutation(X.shape[0])
     return X[idx], y[idx], w_star, b_star
 
@@ -170,10 +202,6 @@ def to_plot(
 def decision_line_points(
     w: np.ndarray, b: float, rect: Tuple[float, float, float, float]
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Linha: w0*x + w1*y + b = 0.
-    Retorna dois pontos no espaço original (para converter para o plot).
-    """
     xmin, ymin, xmax, ymax = rect
     w0, w1 = float(w[0]), float(w[1])
     eps = 1e-9
@@ -210,7 +238,7 @@ def allocate_tweens(weights: np.ndarray, target: int, min_tween: int, max_tween:
     if cur > target:
         order = np.argsort(weights)
         i = 0
-        while cur > target and i < order.size * 120:
+        while cur > target and i < order.size * 140:
             j = order[i % order.size]
             if tw[j] > min_tween:
                 tw[j] -= 1
@@ -219,7 +247,7 @@ def allocate_tweens(weights: np.ndarray, target: int, min_tween: int, max_tween:
     elif cur < target:
         order = np.argsort(-weights)
         i = 0
-        while cur < target and i < order.size * 120:
+        while cur < target and i < order.size * 140:
             j = order[i % order.size]
             if tw[j] < max_tween:
                 tw[j] += 1
@@ -229,20 +257,36 @@ def allocate_tweens(weights: np.ndarray, target: int, min_tween: int, max_tween:
 
 
 def perceptron_with_pocket_snaps(
-    X: np.ndarray, y: np.ndarray, epochs: int, lr: float, rng: np.random.Generator
+    X: np.ndarray,
+    y: np.ndarray,
+    epochs: int,
+    lr: float,
+    rng: np.random.Generator,
+    w_star: np.ndarray,
+    b_star: float,
 ) -> List[Snap]:
     """
-    Perceptron online (fiel): atualiza em cada erro.
-    Pocket: mantém (w_best,b_best) com melhor acurácia observada.
-    Snapshots a cada SNAP_EVERY_UPDATES e ao final de cada época.
+    Perceptron padrão (online):
+      se erra: w <- w + lr*y*x ; b <- b + lr*y
+    Pocket:
+      guarda (w_best,b_best) com melhor acurácia observada.
+
+    Correção-chave:
+      inicializa w,b invertidos em relação ao professor para garantir updates (evita 0 updates).
     """
-    # inicialização neutra (mais fiel e previsível)
-    w = np.zeros(2, dtype=float)
-    b = 0.0
+    # inicialização deliberadamente "ruim" (invertida)
+    w = (-w_star).astype(float).copy()
+    b = float(-b_star)
+
+    # micro-ruído para evitar empates/linhas degeneradas em seeds específicas
+    w += rng.normal(0.0, 0.02, size=w.shape)
+    b += float(rng.normal(0.0, 0.02))
+
+    cur_acc = accuracy(X, y, w, b)
 
     w_best = w.copy()
     b_best = b
-    best_acc = accuracy(X, y, w_best, b_best)
+    best_acc = cur_acc
 
     snaps: List[Snap] = []
     updates = 0
@@ -254,7 +298,7 @@ def perceptron_with_pocket_snaps(
             w_best=w_best.copy(),
             b_best=b_best,
             best_acc=best_acc,
-            cur_acc=best_acc,
+            cur_acc=cur_acc,
             updates=updates,
             epoch=0,
         )
@@ -271,7 +315,6 @@ def perceptron_with_pocket_snaps(
             yhat = 1 if a >= 0 else -1
 
             if yhat != yi:
-                # atualização perceptron (matematicamente padrão)
                 w = w + lr * yi * xi
                 b = b + lr * yi
                 updates += 1
@@ -316,11 +359,24 @@ def perceptron_with_pocket_snaps(
                 )
             )
 
-        # Se separável e já atingiu 100% no pocket, pode parar cedo
+        # se separável e já atingiu 100% no pocket, pode parar
         if best_acc >= 0.999:
             break
 
-    # remove duplicados (pocket igual e w igual)
+    # fallback: se por algum motivo raro updates==0, reinicializa 1 vez
+    if snaps[-1].updates == 0:
+        w = rng.normal(0.0, 0.6, size=(2,))
+        b = float(rng.normal(0.0, 0.4))
+        cur_acc = accuracy(X, y, w, b)
+        w_best = w.copy()
+        b_best = b
+        best_acc = cur_acc
+        snaps = [
+            Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                 best_acc=best_acc, cur_acc=cur_acc, updates=0, epoch=0)
+        ]
+
+    # remove duplicados pelo pocket/acc
     cleaned = [snaps[0]]
     for s in snaps[1:]:
         p = cleaned[-1]
@@ -328,6 +384,7 @@ def perceptron_with_pocket_snaps(
             np.linalg.norm(s.w_best - p.w_best) > 1e-10
             or abs(s.b_best - p.b_best) > 1e-10
             or abs(s.best_acc - p.best_acc) > 1e-12
+            or s.epoch != p.epoch
         ):
             cleaned.append(s)
     return cleaned
@@ -361,10 +418,10 @@ def main() -> None:
 
     Xv, rect = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
 
-    # Treino (perceptron + pocket)
-    snaps = perceptron_with_pocket_snaps(X, y, EPOCHS, LR, rng)
+    # Treino
+    snaps = perceptron_with_pocket_snaps(X, y, EPOCHS, LR, rng, w_star, b_star)
 
-    # Pacing por mudança do pocket (o que o usuário vê)
+    # Pacing (pelo pocket, pois é o que a barra usa)
     weights = []
     for i in range(len(snaps) - 1):
         s0, s1 = snaps[i], snaps[i + 1]
@@ -385,12 +442,12 @@ def main() -> None:
         for sf in range(nsub):
             t = sf / float(nsub)
 
-            # interpola pocket (linha exibida)
+            # interpola pocket (linha exibida principal)
             w_best = lerp(s0.w_best, s1.w_best, t)
             b_best = float((1.0 - t) * s0.b_best + t * s1.b_best)
             best_acc = float((1.0 - t) * s0.best_acc + t * s1.best_acc)
 
-            # interpola estado atual (opcional para desenhar linha atual)
+            # interpola atual (para linha secundária)
             w_cur = lerp(s0.w, s1.w, t)
             b_cur = float((1.0 - t) * s0.b + t * s1.b)
             cur_acc = float((1.0 - t) * s0.cur_acc + t * s1.cur_acc)
@@ -411,22 +468,25 @@ def main() -> None:
                 fill=MUTED
             )
 
-            # Barra: best_acc (monótona) — evita “barinha maluca” em dados não separáveis
+            # Barra: best_acc (monótona não-decrescente por definição do pocket)
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
             dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h],
                                  radius=8, fill=BAR_BG, outline=STROKE)
             prog = max(0.0, min(1.0, best_acc))
             dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h],
                                  radius=8, fill=BAR_FILL)
-            dr.text((inner_x + 22, inner_y + 70),
-                    f"best accuracy: {best_acc*100:5.1f}%   (current: {cur_acc*100:5.1f}%)",
-                    fill=MUTED)
+            dr.text(
+                (inner_x + 22, inner_y + 70),
+                f"best accuracy: {best_acc*100:5.1f}%   (current: {cur_acc*100:5.1f}%)",
+                fill=MUTED
+            )
 
-            # Indicadores de separabilidade (informativo)
             sep_txt = "separável" if LABEL_FLIP_P == 0.0 else "não separável (ruído de rótulo)"
-            dr.text((inner_x + 22, inner_y + 92),
-                    f"dataset: {sep_txt} | margin={MARGIN:.2f} | flip_p={LABEL_FLIP_P:.2f}",
-                    fill=(120, 135, 155))
+            dr.text(
+                (inner_x + 22, inner_y + 92),
+                f"dataset: {sep_txt} | margin={MARGIN:.2f} | flip_p={LABEL_FLIP_P:.2f}",
+                fill=(120, 135, 155)
+            )
 
             # Legenda
             lx, ly = inner_x + 22, inner_y + 122
@@ -435,9 +495,11 @@ def main() -> None:
             dr.rectangle([lx, ly + 18 - 10, lx + 12, ly + 18 + 2], fill=C_NEG)
             dr.text((lx + 18, ly + 18 - 12), "y=-1", fill=MUTED)
 
-            dr.text((inner_x + 22, inner_y + 168),
-                    "linha verde: pocket (melhor até agora)\nlinha azul: estado atual",
-                    fill=(120, 135, 155))
+            dr.text(
+                (inner_x + 22, inner_y + 168),
+                "linha verde: pocket (melhor até agora)\nlinha azul: estado atual",
+                fill=(120, 135, 155)
+            )
 
             # Plot BG
             dr.rounded_rectangle(
@@ -454,7 +516,7 @@ def main() -> None:
             pA, pB = decision_line_points(w_best, b_best, rect)
             ax, ay = to_plot(pA, rect, plot, pad=24.0)
             bx, by = to_plot(pB, rect, plot, pad=24.0)
-            dr.line([ax, ay, bx, by], fill=C_LINE, width=LINE_W)
+            dr.line([ax, ay, bx, by], fill=C_LINE_POCKET, width=LINE_W)
 
             # Linha atual (azul claro)
             pA2, pB2 = decision_line_points(w_cur, b_cur, rect)
@@ -477,10 +539,20 @@ def main() -> None:
         for _ in range(HOLD_LAST):
             images.append(final)
 
-        images[0].save(out, save_all=True, append_images=images[1:], duration=FRAME_MS, loop=0, optimize=False)
+        images[0].save(
+            out,
+            save_all=True,
+            append_images=images[1:],
+            duration=FRAME_MS,
+            loop=0,
+            optimize=False
+        )
 
     last = snaps[-1]
-    print(f"[ok] wrote {out} | best_acc={last.best_acc:.3f} | cur_acc={last.cur_acc:.3f} | snaps={len(snaps)} | frames={len(images)}")
+    print(
+        f"[ok] wrote {out} | best_acc={last.best_acc:.3f} | cur_acc={last.cur_acc:.3f} "
+        f"| updates={last.updates} | epoch={last.epoch} | snaps={len(snaps)} | frames={len(images)}"
+    )
 
 
 if __name__ == "__main__":
