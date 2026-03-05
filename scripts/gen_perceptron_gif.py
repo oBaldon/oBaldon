@@ -15,15 +15,15 @@ from PIL import Image, ImageDraw
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
 
-N_PER_CLASS = 160
-NOISE = 1.00
-SEPARATION = 1.55      # menor => mais difícil
-HARD_FRAC = 0.28       # fração de pontos "perto da fronteira" (mais difícil)
+N_TOTAL = 360          # total de pontos (balanceado)
+NOISE = 0.95
+SEP = 1.35             # separação moderada
+HARD_FRAC = 0.35       # fração de pontos perto da fronteira, mas com rótulo consistente
+MARGIN = 0.18          # quão perto da fronteira os "hard points" ficam (menor = mais difícil, ainda separável)
 
-EPOCHS = 20
-LR = 0.08
+EPOCHS = 22
+LR = 0.07
 
-# Snapshots por atualização
 SNAP_EVERY_UPDATES = 10
 
 # GIF pacing
@@ -55,7 +55,7 @@ C_LINE = (34, 197, 94)    # fronteira
 
 @dataclass(frozen=True)
 class Snap:
-    w: np.ndarray  # (2,)
+    w: np.ndarray
     b: float
     acc: float
     step: int
@@ -67,51 +67,79 @@ def seed_from_today() -> int:
     return (d.year * 10000 + d.month * 100 + d.day) % (2**32 - 1)
 
 
-def gen_dataset(rng: np.random.Generator, n_per_class: int, noise: float, sep: float, hard_frac: float) -> Tuple[np.ndarray, np.ndarray]:
+def sign01(a: np.ndarray) -> np.ndarray:
+    y = np.where(a >= 0.0, 1, -1)
+    return y.astype(int)
+
+
+def gen_dataset_separable(rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Dataset 2D para perceptron:
-    - dois gaussianos com separação moderada
-    - injeta uma fração de pontos perto da fronteira para dificultar e dar progressão
-    y em {-1,+1}
+    Gera dataset separável com:
+    - dois clusters gaussianos moderadamente separados
+    - pontos "difíceis" próximos à fronteira, com rótulo consistente via hiperplano "professor"
     """
-    m0 = np.array([-sep, -0.7])
-    m1 = np.array([ sep,  0.8])
-    cov = np.array([[noise, 0.20], [0.20, noise]])
+    # hiperplano professor (fixo e simples): w* x + b = 0
+    w_star = np.array([1.0, -0.7], dtype=float)
+    b_star = 0.10
 
-    X0 = rng.multivariate_normal(m0, cov, size=n_per_class)
-    X1 = rng.multivariate_normal(m1, cov, size=n_per_class)
+    n_hard = int(N_TOTAL * HARD_FRAC)
+    n_easy = N_TOTAL - n_hard
+    n_easy_half = n_easy // 2
 
-    # pontos "difíceis": próximos do meio entre as classes
-    hard_n = int((2 * n_per_class) * hard_frac)
-    hard = rng.normal(loc=0.0, scale=noise * 0.55, size=(hard_n, 2))
-    # atribui rótulos alternados para ficar ambíguo (mas ainda separável na prática)
-    y_hard = rng.choice([-1, 1], size=(hard_n,), replace=True)
+    # easy points: dois gaussianos separados
+    m0 = np.array([-SEP, -0.7])
+    m1 = np.array([ SEP,  0.8])
+    cov = np.array([[NOISE, 0.18], [0.18, NOISE]])
 
-    X = np.vstack([X0, X1, hard]).astype(float)
-    y = np.hstack([-np.ones(n_per_class, dtype=int), np.ones(n_per_class, dtype=int), y_hard.astype(int)])
+    X0 = rng.multivariate_normal(m0, cov, size=n_easy_half)
+    X1 = rng.multivariate_normal(m1, cov, size=n_easy - n_easy_half)
 
+    X_easy = np.vstack([X0, X1])
+    y_easy = np.hstack([-np.ones(X0.shape[0], dtype=int), np.ones(X1.shape[0], dtype=int)])
+
+    # hard points: amostras perto da fronteira do professor, mas com rótulo coerente
+    hard = []
+    hard_y = []
+    tries = 0
+    while len(hard) < n_hard and tries < n_hard * 80:
+        tries += 1
+        x = rng.normal(loc=0.0, scale=NOISE * 0.9, size=(2,))
+        # força proximidade da fronteira: |w*x + b| pequeno
+        score = float(np.dot(w_star, x) + b_star)
+        if abs(score) <= MARGIN:
+            # empurra levemente para um lado aleatório mantendo separável
+            side = rng.choice([-1.0, 1.0])
+            # deslocamento pequeno na direção normal do hiperplano
+            nrm = w_star / (np.linalg.norm(w_star) + 1e-9)
+            x2 = x + side * (MARGIN * 1.25) * nrm
+            y2 = 1 if (np.dot(w_star, x2) + b_star) >= 0 else -1
+            hard.append(x2)
+            hard_y.append(y2)
+
+    X_hard = np.array(hard, dtype=float)
+    y_hard = np.array(hard_y, dtype=int)
+
+    X = np.vstack([X_easy, X_hard]).astype(float)
+    y = np.hstack([y_easy, y_hard]).astype(int)
+
+    # embaralha
     idx = rng.permutation(X.shape[0])
     return X[idx], y[idx]
 
 
 def accuracy(X: np.ndarray, y: np.ndarray, w: np.ndarray, b: float) -> float:
-    a = X @ w + b
-    pred = np.where(a >= 0.0, 1, -1)
+    pred = sign01(X @ w + b)
     return float((pred == y).mean())
 
 
 def perceptron_snaps(X: np.ndarray, y: np.ndarray, epochs: int, lr: float, rng: np.random.Generator) -> List[Snap]:
-    """
-    Perceptron online. Captura snapshots a cada N updates (correções),
-    garantindo que o GIF mostre evolução gradual.
-    """
-    # inicialização "ruim": perto de zero
-    w = rng.normal(0.0, 0.05, size=(2,)).astype(float)
-    b = float(rng.normal(0.0, 0.05))
+    # inicialização deliberadamente fraca (próxima de zero)
+    w = rng.normal(0.0, 0.06, size=(2,)).astype(float)
+    b = float(rng.normal(0.0, 0.06))
 
     snaps: List[Snap] = []
     step = 0
-    upd = 0
+    updates = 0
 
     snaps.append(Snap(w=w.copy(), b=b, acc=accuracy(X, y, w, b), step=step, epoch=0))
 
@@ -120,30 +148,34 @@ def perceptron_snaps(X: np.ndarray, y: np.ndarray, epochs: int, lr: float, rng: 
         for i in order:
             step += 1
             xi = X[i]
-            yi = y[i]
+            yi = int(y[i])
             a = float(np.dot(w, xi) + b)
             yhat = 1 if a >= 0 else -1
+
             if yhat != yi:
                 w = w + lr * yi * xi
                 b = b + lr * yi
-                upd += 1
+                updates += 1
 
-                if upd % SNAP_EVERY_UPDATES == 0:
+                if updates % SNAP_EVERY_UPDATES == 0:
                     snaps.append(Snap(w=w.copy(), b=b, acc=accuracy(X, y, w, b), step=step, epoch=ep))
 
-        # snapshot ao fim de cada época
         snaps.append(Snap(w=w.copy(), b=b, acc=accuracy(X, y, w, b), step=step, epoch=ep))
 
-    # remove snaps duplicados (w,b iguais) se ocorrer
+        # early stop se chegou em 100% (mas ainda mantém alguns snaps finais via hold do gif)
+        if snaps[-1].acc >= 0.999:
+            break
+
+    # remove duplicados (w,b iguais)
     cleaned = [snaps[0]]
     for s in snaps[1:]:
-        prev = cleaned[-1]
-        if np.linalg.norm(s.w - prev.w) > 1e-9 or abs(s.b - prev.b) > 1e-9:
+        p = cleaned[-1]
+        if np.linalg.norm(s.w - p.w) > 1e-10 or abs(s.b - p.b) > 1e-10:
             cleaned.append(s)
     return cleaned
 
 
-def normalize_to_rect(X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 20.0) -> Tuple[np.ndarray, Tuple[float, float, float, float]]:
+def normalize_to_rect(X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 24.0) -> Tuple[np.ndarray, Tuple[float, float, float, float]]:
     xmin, ymin = float(X[:, 0].min()), float(X[:, 1].min())
     xmax, ymax = float(X[:, 0].max()), float(X[:, 1].max())
 
@@ -160,9 +192,11 @@ def normalize_to_rect(X: np.ndarray, x0: float, y0: float, w: float, h: float, p
 def to_plot(pt: np.ndarray, rect: Tuple[float, float, float, float], plot: Tuple[float, float, float, float], pad: float = 24.0) -> Tuple[float, float]:
     xmin, ymin, xmax, ymax = rect
     x0, y0, w, h = plot
+
     sx = (w - 2 * pad) / (xmax - xmin + 1e-9)
     sy = (h - 2 * pad) / (ymax - ymin + 1e-9)
     s = min(sx, sy)
+
     x = x0 + pad + (pt[0] - xmin) * s
     y = y0 + h - pad - (pt[1] - ymin) * s
     return float(x), float(y)
@@ -184,7 +218,6 @@ def allocate_tweens(weights: np.ndarray, target_total_frames: int, min_tween: in
         return int(tw_.sum() + 1)
 
     cur = total(tw)
-
     if cur > target_total_frames:
         order = np.argsort(weights)
         i = 0
@@ -203,7 +236,6 @@ def allocate_tweens(weights: np.ndarray, target_total_frames: int, min_tween: in
                 tw[j] += 1
                 cur += 1
             i += 1
-
     return tw.tolist()
 
 
@@ -211,16 +243,13 @@ def decision_line_points(w: np.ndarray, b: float, rect: Tuple[float, float, floa
     xmin, ymin, xmax, ymax = rect
     w0, w1 = float(w[0]), float(w[1])
     eps = 1e-9
-
     if abs(w1) > eps:
-        y_at_xmin = -(w0 * xmin + b) / w1
-        y_at_xmax = -(w0 * xmax + b) / w1
-        return np.array([xmin, y_at_xmin], dtype=float), np.array([xmax, y_at_xmax], dtype=float)
-
+        y0 = -(w0 * xmin + b) / w1
+        y1 = -(w0 * xmax + b) / w1
+        return np.array([xmin, y0], dtype=float), np.array([xmax, y1], dtype=float)
     if abs(w0) > eps:
-        x0 = -b / w0
-        return np.array([x0, ymin], dtype=float), np.array([x0, ymax], dtype=float)
-
+        x = -b / w0
+        return np.array([x, ymin], dtype=float), np.array([x, ymax], dtype=float)
     return np.array([xmin, ymin], dtype=float), np.array([xmax, ymax], dtype=float)
 
 
@@ -240,7 +269,7 @@ def main() -> None:
     plot_h = inner_h - 44
     plot = (plot_x0, plot_y0, plot_w, plot_h)
 
-    X, y = gen_dataset(rng, N_PER_CLASS, NOISE, SEPARATION, HARD_FRAC)
+    X, y = gen_dataset_separable(rng)
     Xv, rect = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
 
     snaps = perceptron_snaps(X, y, EPOCHS, LR, rng)
@@ -249,7 +278,6 @@ def main() -> None:
     for i in range(len(snaps) - 1):
         dw = float(np.linalg.norm(snaps[i + 1].w - snaps[i].w))
         db = float(abs(snaps[i + 1].b - snaps[i].b))
-        # maior peso = mais frames
         weights.append(dw + 0.35 * db + 1e-6)
     weights = np.array(weights, dtype=float)
     tweens = allocate_tweens(weights, TARGET_TOTAL_FRAMES, MIN_TWEEN, MAX_TWEEN)
@@ -257,8 +285,7 @@ def main() -> None:
     images: List[Image.Image] = []
 
     for i in range(len(snaps) - 1):
-        s0 = snaps[i]
-        s1 = snaps[i + 1]
+        s0, s1 = snaps[i], snaps[i + 1]
         nsub = tweens[i] if i < len(tweens) else MIN_TWEEN
 
         for sf in range(nsub):
@@ -270,23 +297,20 @@ def main() -> None:
             im = Image.new("RGB", (CANVAS_W, CANVAS_H), BG)
             dr = ImageDraw.Draw(im)
 
-            dr.rounded_rectangle(
-                [inner_x, inner_y, inner_x + inner_w, inner_y + inner_h],
-                radius=16, fill=CARD, outline=STROKE, width=2
-            )
+            dr.rounded_rectangle([inner_x, inner_y, inner_x + inner_w, inner_y + inner_h],
+                                 radius=16, fill=CARD, outline=STROKE, width=2)
 
             dr.text((inner_x + 22, inner_y + 16), "Perceptron", fill=TEXT)
-            dr.text(
-                (inner_x + 140, inner_y + 20),
-                f"epoch={s0.epoch}/{EPOCHS} | step={s0.step} | seed={seed}",
-                fill=MUTED
-            )
+            dr.text((inner_x + 140, inner_y + 20),
+                    f"epoch={s0.epoch} | step={s0.step} | seed={seed}", fill=MUTED)
 
-            # barra acurácia
+            # barra acurácia (agora deve subir e estabilizar em 100%)
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
-            dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=8, fill=BAR_BG, outline=STROKE)
+            dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h],
+                                 radius=8, fill=BAR_BG, outline=STROKE)
             prog = max(0.0, min(1.0, acc))
-            dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h], radius=8, fill=BAR_FILL)
+            dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h],
+                                 radius=8, fill=BAR_FILL)
             dr.text((inner_x + 22, inner_y + 70), f"accuracy: {acc*100:5.1f}%", fill=MUTED)
 
             # legenda
@@ -296,78 +320,32 @@ def main() -> None:
             dr.rectangle([lx, ly + 18 - 10, lx + 12, ly + 18 + 2], fill=C_NEG)
             dr.text((lx + 18, ly + 18 - 12), "y=-1", fill=MUTED)
 
-            # plot bg
-            dr.rounded_rectangle(
-                [plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
-                radius=14, fill=(11, 18, 32), outline=STROKE
-            )
+            # plot
+            dr.rounded_rectangle([plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
+                                 radius=14, fill=(11, 18, 32), outline=STROKE)
 
-            # pontos
             r = 3
             for p_idx, (px, py) in enumerate(Xv):
                 dr.ellipse([px - r, py - r, px + r, py + r], fill=(C_POS if y[p_idx] == 1 else C_NEG))
 
-            # fronteira
             pA, pB = decision_line_points(w, b, rect)
             ax, ay = to_plot(pA, rect, plot, pad=24.0)
             bx, by = to_plot(pB, rect, plot, pad=24.0)
             dr.line([ax, ay, bx, by], fill=C_LINE, width=3)
 
-            dr.text(
-                (inner_x + 22, inner_y + inner_h - 26),
-                f"w=[{w[0]: .2f}, {w[1]: .2f}]  b={b: .2f}",
-                fill=(100, 116, 139)
-            )
+            dr.text((inner_x + 22, inner_y + inner_h - 26),
+                    f"w=[{w[0]: .2f}, {w[1]: .2f}]  b={b: .2f}", fill=(100, 116, 139))
 
             images.append(im)
 
     # final + hold
     last = snaps[-1]
-    def render_final() -> Image.Image:
-        im = Image.new("RGB", (CANVAS_W, CANVAS_H), BG)
-        dr = ImageDraw.Draw(im)
-
-        dr.rounded_rectangle([inner_x, inner_y, inner_x + inner_w, inner_y + inner_h],
-                             radius=16, fill=CARD, outline=STROKE, width=2)
-        dr.text((inner_x + 22, inner_y + 16), "Perceptron", fill=TEXT)
-        dr.text((inner_x + 140, inner_y + 20), f"final | epoch={EPOCHS}/{EPOCHS} | seed={seed}", fill=MUTED)
-
-        bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
-        dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=8, fill=BAR_BG, outline=STROKE)
-        prog = max(0.0, min(1.0, last.acc))
-        dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h], radius=8, fill=BAR_FILL)
-        dr.text((inner_x + 22, inner_y + 70), f"accuracy: {last.acc*100:5.1f}%", fill=MUTED)
-
-        dr.rounded_rectangle([plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
-                             radius=14, fill=(11, 18, 32), outline=STROKE)
-        r = 3
-        for p_idx, (px, py) in enumerate(Xv):
-            dr.ellipse([px - r, py - r, px + r, py + r], fill=(C_POS if y[p_idx] == 1 else C_NEG))
-
-        pA, pB = decision_line_points(last.w, last.b, rect)
-        ax, ay = to_plot(pA, rect, plot, pad=24.0)
-        bx, by = to_plot(pB, rect, plot, pad=24.0)
-        dr.line([ax, ay, bx, by], fill=C_LINE, width=3)
-
-        dr.text((inner_x + 22, inner_y + inner_h - 26),
-                f"w=[{last.w[0]: .2f}, {last.w[1]: .2f}]  b={last.b: .2f}",
-                fill=(100, 116, 139))
-        return im
-
-    final_img = render_final()
-    images.append(final_img)
+    final = images[-1]
     for _ in range(HOLD_LAST):
-        images.append(final_img)
+        images.append(final)
 
-    images[0].save(
-        out,
-        save_all=True,
-        append_images=images[1:],
-        duration=FRAME_MS,
-        loop=0,
-        optimize=False
-    )
-    print(f"[ok] wrote {out} | snaps={len(snaps)} | frames={len(images)}")
+    images[0].save(out, save_all=True, append_images=images[1:], duration=FRAME_MS, loop=0, optimize=False)
+    print(f"[ok] wrote {out} | acc_final={last.acc:.3f} | snaps={len(snaps)} | frames={len(images)}")
 
 
 if __name__ == "__main__":
