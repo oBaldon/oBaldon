@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from PIL import ImageFont
 import heapq
+
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -16,6 +18,7 @@ from PIL import Image, ImageDraw
 # Configuração (ajuste aqui)
 # =========================
 CANVAS_W, CANVAS_H = 980, 360  # "grande"
+FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
 
 GW, GH = 44, 18          # grid maior (visual melhor)
 OBSTACLE_P = 0.27
@@ -223,11 +226,11 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
             radius=16, fill=CARD, outline=STROKE, width=2
         )
 
-        dr.text((inner_x + 22, inner_y + 16), "A*", fill=TEXT)
+        dr.text((inner_x + 22, inner_y + 16), "A*", fill=TEXT, font=FONT)
         dr.text(
             (inner_x + 60, inner_y + 20),
             f"grid={GW}x{GH} | frames={len(timeline)} | seed={seed}",
-            fill=MUTED
+            fill=MUTED, font=FONT
         )
 
         # Legenda
@@ -242,7 +245,7 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
         ]
         for i, (name, col) in enumerate(legend):
             dr.rectangle([lx, ly + i * 20 - 10, lx + 12, ly + i * 20 + 2], fill=col)
-            dr.text((lx + 18, ly + i * 20 - 12), name, fill=MUTED)
+            dr.text((lx + 18, ly + i * 20 - 12), name, fill=MUTED, font=FONT)
 
         # Grid background
         dr.rounded_rectangle([gx - 12, gy - 12, gx + GW * cell + 12, gy + GH * cell + 12], radius=14, fill=(11, 18, 32), outline=STROKE)
@@ -276,7 +279,7 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
 
         # Rodapé
         status = "found" if final_path is not None else "no-path"
-        dr.text((inner_x + 22, inner_y + inner_h - 26), f"status={status} (GIF)", fill=(100, 116, 139))
+        dr.text((inner_x + 22, inner_y + inner_h - 26), f"status={status} (GIF)", fill=(100, 116, 139), font=FONT)
 
         images.append(im)
 

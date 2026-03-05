@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import List, Tuple
+from PIL import ImageFont
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -14,10 +15,11 @@ from PIL import Image, ImageDraw
 # Configuração
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
+FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
 
 N_TOTAL = 420
 NOISE_X = 1.00           # ruído nas features
-MARGIN = 0.30            # força |w*·x + b*| >= MARGIN
+MARGIN = 0.15            # força |w*·x + b*| >= MARGIN
 LABEL_FLIP_P = 0.04      # 0 => separável; >0 => não separável (teoria permite não chegar a 100%)
 
 EPOCHS = 26
@@ -461,12 +463,14 @@ def main() -> None:
                 radius=16, fill=CARD, outline=STROKE, width=2
             )
 
-            dr.text((inner_x + 22, inner_y + 16), "Perceptron (Pocket)", fill=TEXT)
-            dr.text(
-                (inner_x + 210, inner_y + 20),
-                f"epoch={s0.epoch} | updates={s0.updates} | seed={seed}",
-                fill=MUTED
-            )
+            dr.text((inner_x + 22, inner_y + 16), "Perceptron (Pocket)", fill=TEXT, font=FONT)
+            dr.text((inner_x + 210, inner_y + 20),
+                    f"epoch={s0.epoch} | updates={s0.updates}",
+                    fill=MUTED, font=FONT)
+
+            dr.text((inner_x + 210, inner_y + 36),
+                    f"seed={seed}",
+                    fill=MUTED, font=FONT)
 
             # Barra: best_acc (monótona não-decrescente por definição do pocket)
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
@@ -478,27 +482,27 @@ def main() -> None:
             dr.text(
                 (inner_x + 22, inner_y + 70),
                 f"best accuracy: {best_acc*100:5.1f}%   (current: {cur_acc*100:5.1f}%)",
-                fill=MUTED
+                fill=MUTED, font=FONT
             )
 
             sep_txt = "separável" if LABEL_FLIP_P == 0.0 else "não separável (ruído de rótulo)"
             dr.text(
                 (inner_x + 22, inner_y + 92),
                 f"dataset: {sep_txt} | margin={MARGIN:.2f} | flip_p={LABEL_FLIP_P:.2f}",
-                fill=(120, 135, 155)
+                fill=(120, 135, 155), font=FONT
             )
 
             # Legenda
             lx, ly = inner_x + 22, inner_y + 122
             dr.rectangle([lx, ly - 10, lx + 12, ly + 2], fill=C_POS)
-            dr.text((lx + 18, ly - 12), "y=+1", fill=MUTED)
+            dr.text((lx + 18, ly - 12), "y=+1", fill=MUTED, font=FONT)
             dr.rectangle([lx, ly + 18 - 10, lx + 12, ly + 18 + 2], fill=C_NEG)
-            dr.text((lx + 18, ly + 18 - 12), "y=-1", fill=MUTED)
+            dr.text((lx + 18, ly + 18 - 12), "y=-1", fill=MUTED, font=FONT)
 
             dr.text(
                 (inner_x + 22, inner_y + 168),
                 "linha verde: pocket (melhor até agora)\nlinha azul: estado atual",
-                fill=(120, 135, 155)
+                fill=(120, 135, 155), font=FONT
             )
 
             # Plot BG
@@ -528,7 +532,7 @@ def main() -> None:
             dr.text(
                 (inner_x + 22, inner_y + inner_h - 26),
                 f"pocket w=[{w_best[0]: .2f}, {w_best[1]: .2f}]  b={b_best: .2f}",
-                fill=(100, 116, 139)
+                fill=(100, 116, 139), font=FONT
             )
 
             images.append(im)

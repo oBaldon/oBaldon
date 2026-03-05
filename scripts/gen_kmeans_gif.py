@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import List, Tuple
+from PIL import ImageFont
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -14,6 +15,7 @@ from PIL import Image, ImageDraw
 # Configuração (ajuste aqui)
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
+FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
 K = 4
 N_POINTS = 260
 
@@ -238,7 +240,7 @@ def main() -> None:
 
         # Cabeçalho
         title = "K-means (mini-batch)"
-        dr.text((inner_x + 22, inner_y + 16), title, fill=TEXT)
+        dr.text((inner_x + 22, inner_y + 16), title, fill=TEXT, font=FONT)
 
         meta = (
             f"k={K} | iteration={epoch_idx}/{EPOCHS} | "
@@ -252,7 +254,7 @@ def main() -> None:
         meta_max_w = int((inner_x + inner_w) - 22 - meta_x)
 
         meta = fit_text(dr, meta, meta_max_w)
-        dr.text((meta_x, meta_y), meta, fill=MUTED)
+        dr.text((meta_x, meta_y), meta, fill=MUTED, font=FONT)
 
         # Barra inertia
         bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
@@ -265,7 +267,7 @@ def main() -> None:
         lx, ly = inner_x + 22, inner_y + 86
         for j in range(K):
             dr.rectangle([lx, ly + j * 22 - 10, lx + 12, ly + j * 22 + 2], fill=COLORS[j])
-            dr.text((lx + 18, ly + j * 22 - 12), f"cluster {j}", fill=MUTED)
+            dr.text((lx + 18, ly + j * 22 - 12), f"cluster {j}", fill=MUTED, font=FONT)
 
         # Plot BG
         dr.rounded_rectangle(
