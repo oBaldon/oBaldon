@@ -48,7 +48,7 @@ jobs:
           python scripts/gen_kmeans_gif.py
           python scripts/gen_astar_gif.py
           python scripts/gen_perceptron_gif.py
-          
+          python scripts/gen_gradient_descent_gif.py
 
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
