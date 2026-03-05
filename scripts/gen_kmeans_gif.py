@@ -5,17 +5,19 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import List, Tuple
-from PIL import ImageFont
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 
 # =========================
 # Configuração (ajuste aqui)
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
-FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
+
+# Fonte (garante UTF-8/acentos no GitHub Actions em ubuntu-latest)
+FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+
 K = 4
 N_POINTS = 260
 
@@ -30,8 +32,11 @@ HOLD_LAST = 14
 
 # Layout
 CARD_PAD = 18
-LEFT_W = 360
+LEFT_W = 320              # reduzido para sobrar mais espaço ao plot (corrige “metade direita vazia”)
 GAP = 18
+
+# Header/spacing (corrige encavalamento de título/legenda)
+HEADER_H = 44
 
 # Visual
 BG = (11, 18, 32)
@@ -87,7 +92,9 @@ def assign_labels_and_inertia(X: np.ndarray, centers: np.ndarray) -> Tuple[np.nd
     return labels, inertia
 
 
-def normalize_to_rect(X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 20.0) -> np.ndarray:
+def normalize_to_rect(
+    X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 20.0
+) -> np.ndarray:
     xmin, ymin = X.min(axis=0)
     xmax, ymax = X.max(axis=0)
 
@@ -111,26 +118,26 @@ def lerp_color(c0: Tuple[int, int, int], c1: Tuple[int, int, int], t: float) -> 
         int(round((1.0 - t) * c0[1] + t * c1[1])),
         int(round((1.0 - t) * c0[2] + t * c1[2])),
     )
-    
+
+
 def fit_text(dr: ImageDraw.ImageDraw, text: str, max_w: int) -> str:
     """
     Trunca com '…' para caber em max_w pixels.
-    Usa a fonte padrão do Pillow (não depende de assets).
     """
-    if dr.textlength(text) <= max_w:
+    if dr.textlength(text, font=FONT) <= max_w:
         return text
 
     ell = "…"
     lo, hi = 0, len(text)
-    # busca binária no comprimento do prefixo
     while lo < hi:
         mid = (lo + hi) // 2
         cand = text[:mid] + ell
-        if dr.textlength(cand) <= max_w:
+        if dr.textlength(cand, font=FONT) <= max_w:
             lo = mid + 1
         else:
             hi = mid
     return text[:max(0, lo - 1)] + ell
+
 
 def mini_batch_kmeans_states(
     X: np.ndarray,
@@ -140,15 +147,9 @@ def mini_batch_kmeans_states(
     batch_size: int,
     rng: np.random.Generator
 ) -> List[VizState]:
-    """
-    Mini-batch/online k-means:
-    - atualiza centróides por mini-batch
-    - gera estados frequentes para GIF com pacing uniforme
-    """
     n = X.shape[0]
     centers = X[rng.choice(n, size=k, replace=False)].copy()
 
-    # contadores por centróide para learning-rate estável (1/t)
     counts = np.ones(k, dtype=np.int64)
 
     labels, inertia = assign_labels_and_inertia(X, centers)
@@ -159,14 +160,12 @@ def mini_batch_kmeans_states(
             batch_idx = rng.choice(n, size=min(batch_size, n), replace=False)
             Xb = X[batch_idx]
 
-            # atribui batch aos centróides atuais
             d2b = ((Xb[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
             lb = d2b.argmin(axis=1)
 
-            # atualização online por ponto do batch
             for xi, cj in zip(Xb, lb, strict=False):
                 counts[cj] += 1
-                eta = 1.0 / counts[cj]  # learning rate decrescente
+                eta = 1.0 / counts[cj]
                 centers[cj] = (1.0 - eta) * centers[cj] + eta * xi
 
             labels, inertia = assign_labels_and_inertia(X, centers)
@@ -186,15 +185,14 @@ def main() -> None:
     inner_x, inner_y = CARD_PAD, CARD_PAD
     inner_w, inner_h = CANVAS_W - 2 * CARD_PAD, CANVAS_H - 2 * CARD_PAD
 
+    # Ajuste: reservar header e evitar que legenda encoste no topo
     plot_x0 = inner_x + LEFT_W + GAP
-    plot_y0 = inner_y + 22
+    plot_y0 = inner_y + HEADER_H
     plot_w = inner_w - LEFT_W - GAP - 18
-    plot_h = inner_h - 44
+    plot_h = inner_h - (HEADER_H + 22)
 
-    # Dados
+    # Dados e estados
     X = gen_points(rng, N_POINTS)
-
-    # Estados mini-batch (muito mais frequentes que Lloyd)
     states = mini_batch_kmeans_states(
         X=X,
         k=K,
@@ -204,10 +202,9 @@ def main() -> None:
         rng=rng
     )
 
-    # Normalização para o plot
+    # Normalização para o plot (agora com área maior e centralização correta)
     Xv = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
 
-    # Para normalizar centróides ao mesmo espaço, normaliza concat (X + todos centers)
     centers_all = np.vstack([st.centers for st in states])
     concat = np.vstack([X, centers_all])
     concat_v = normalize_to_rect(concat, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
@@ -216,8 +213,16 @@ def main() -> None:
     inertia0 = float(states[0].inertia)
     inertiaN = float(states[-1].inertia)
 
-    # Renderização com tween uniforme por micro-passos
     images: List[Image.Image] = []
+
+    # estados = 1 + EPOCHS*STEPS_PER_EPOCH
+    def state_to_epoch_step(s_idx: int) -> Tuple[int, int]:
+        if s_idx == 0:
+            return (0, 0)
+        s = s_idx - 1
+        epoch = s // STEPS_PER_EPOCH + 1
+        step = s % STEPS_PER_EPOCH + 1
+        return (epoch, step)
 
     def draw_frame(
         centers_xy: np.ndarray,
@@ -225,10 +230,7 @@ def main() -> None:
         labels_to: np.ndarray,
         blend_t: float,
         inertia: float,
-        epoch_idx: int,
-        step_in_epoch: int,
-        subframe: int,
-        subframe_total: int
+        epoch_idx: int
     ) -> Image.Image:
         im = Image.new("RGB", (CANVAS_W, CANVAS_H), BG)
         dr = ImageDraw.Draw(im)
@@ -238,44 +240,37 @@ def main() -> None:
             radius=16, fill=CARD, outline=STROKE, width=2
         )
 
-        # Cabeçalho
+        # Header (fixo, sem sobrepor)
         title = "K-means (mini-batch)"
-        dr.text((inner_x + 22, inner_y + 16), title, fill=TEXT, font=FONT)
+        dr.text((inner_x + 22, inner_y + 14), title, fill=TEXT, font=FONT)
 
-        meta = (
-            f"k={K} | iteration={epoch_idx}/{EPOCHS} | "
-            f"seed={seed}"
-        )
-
-        # espaço disponível: do fim do título até a borda interna do card
-        title_w = int(dr.textlength(title))
-        meta_x = inner_x + 22 + title_w + 14
-        meta_y = inner_y + 20
+        meta = f"k={K} | iteração={epoch_idx}/{EPOCHS} | seed={seed}"
+        meta_x = inner_x + 22 + int(dr.textlength(title, font=FONT)) + 14
+        meta_y = inner_y + 16
         meta_max_w = int((inner_x + inner_w) - 22 - meta_x)
-
         meta = fit_text(dr, meta, meta_max_w)
         dr.text((meta_x, meta_y), meta, fill=MUTED, font=FONT)
 
         # Barra inertia
-        bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
+        bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 44, LEFT_W - 44, 12
         dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=8, fill=BAR_BG, outline=STROKE)
         prog = 1.0 - (inertia - inertiaN) / (inertia0 - inertiaN + 1e-9)
         prog = max(0.0, min(1.0, prog))
         dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h], radius=8, fill=BAR_FILL)
 
-        # Legenda
-        lx, ly = inner_x + 22, inner_y + 86
+        # Legenda (empurrada para baixo para não encavalar no header)
+        lx, ly = inner_x + 22, inner_y + 74
         for j in range(K):
             dr.rectangle([lx, ly + j * 22 - 10, lx + 12, ly + j * 22 + 2], fill=COLORS[j])
             dr.text((lx + 18, ly + j * 22 - 12), f"cluster {j}", fill=MUTED, font=FONT)
 
-        # Plot BG
+        # Plot BG (agora ocupa quase todo lado direito e não “vaza”)
         dr.rounded_rectangle(
             [plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
             radius=14, fill=(11, 18, 32), outline=STROKE
         )
 
-        # Pontos com cross-fade entre labels_from e labels_to
+        # Pontos
         r = POINT_R
         for p_idx, (px, py) in enumerate(Xv):
             c0 = COLORS[int(labels_from[p_idx])]
@@ -286,21 +281,12 @@ def main() -> None:
         # Centróides
         for j in range(K):
             cx, cy = float(centers_xy[j, 0]), float(centers_xy[j, 1])
-            dr.ellipse([cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R],
-                       fill=COLORS[j], outline=TEXT, width=2)
+            dr.ellipse(
+                [cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R],
+                fill=COLORS[j], outline=TEXT, width=2
+            )
 
         return im
-
-    # estados = 1 + EPOCHS*STEPS_PER_EPOCH
-    # mapeia índice do estado -> (epoch, step)
-    def state_to_epoch_step(s_idx: int) -> Tuple[int, int]:
-        # s_idx=0 é inicial (epoch=0, step=0)
-        if s_idx == 0:
-            return (0, 0)
-        s = s_idx - 1
-        epoch = s // STEPS_PER_EPOCH + 1
-        step = s % STEPS_PER_EPOCH + 1
-        return (epoch, step)
 
     for i in range(len(states) - 1):
         st0 = states[i]
@@ -308,41 +294,39 @@ def main() -> None:
         c0 = centers_v_all[i]
         c1 = centers_v_all[i + 1]
 
-        epoch, step = state_to_epoch_step(i + 1)
-
-        # tween uniforme por step (pacing constante)
+        epoch, _step = state_to_epoch_step(i + 1)
         nsub = max(1, TWEEN_PER_STEP)
+
         for s in range(nsub):
             t = s / float(nsub)  # 0..(nsub-1)/nsub
             centers_xy = lerp(c0, c1, t)
             inertia = (1.0 - t) * float(st0.inertia) + t * float(st1.inertia)
-            im = draw_frame(
-                centers_xy=centers_xy,
-                labels_from=st0.labels,
-                labels_to=st1.labels,
-                blend_t=t,
-                inertia=inertia,
-                epoch_idx=epoch,
-                step_in_epoch=step,
-                subframe=s + 1,
-                subframe_total=nsub
+            images.append(
+                draw_frame(
+                    centers_xy=centers_xy,
+                    labels_from=st0.labels,
+                    labels_to=st1.labels,
+                    blend_t=t,
+                    inertia=inertia,
+                    epoch_idx=epoch
+                )
             )
-            images.append(im)
 
     # Hold final
-    last = images[-1] if images else None
-    if last is not None:
+    if images:
+        last = images[-1]
         for _ in range(HOLD_LAST):
             images.append(last)
 
-    images[0].save(
-        out,
-        save_all=True,
-        append_images=images[1:],
-        duration=FRAME_MS,
-        loop=0,
-        optimize=False
-    )
+        images[0].save(
+            out,
+            save_all=True,
+            append_images=images[1:],
+            duration=FRAME_MS,
+            loop=0,
+            optimize=False
+        )
+
     print(f"[ok] wrote {out} | frames={len(images)}")
 
 
