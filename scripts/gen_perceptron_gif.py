@@ -19,8 +19,8 @@ FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
 
 N_TOTAL = 420
 NOISE_X = 1.00           # ruído nas features
-MARGIN = 0.15            # força |w*·x + b*| >= MARGIN
-LABEL_FLIP_P = 0.04      # 0 => separável; >0 => não separável (teoria permite não chegar a 100%)
+MARGIN = 0.0001           # força |w*·x + b*| >= MARGIN
+LABEL_FLIP_P = 0     # 0 => separável; >0 => não separável (teoria permite não chegar a 100%)
 
 EPOCHS = 26
 LR = 0.05
