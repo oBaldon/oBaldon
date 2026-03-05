@@ -457,8 +457,8 @@ def main() -> None:
             # meta em duas linhas, sempre truncadas para caber no painel
             meta1 = fit_text(dr, f"epoch={s0.epoch} | updates={s0.updates}", left_text_max_w)
             meta2 = fit_text(dr, f"seed={seed}", left_text_max_w)
-            dr.text((inner_x + 180, inner_y + 22), meta1, fill=MUTED, font=FONT)
-            dr.text((inner_x + 180, inner_y + 38), meta2, fill=MUTED, font=FONT)
+            dr.text((inner_x + 180, inner_y + 16), meta1, fill=MUTED, font=FONT)
+            dr.text((inner_x + 180, inner_y + 32), meta2, fill=MUTED, font=FONT)
 
             # barra
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
