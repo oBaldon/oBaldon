@@ -11,6 +11,10 @@ on:
       - "requirements.txt"
       - ".github/workflows/update-algo-viz.yml"
 
+concurrency:
+  group: update-algo-viz
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
