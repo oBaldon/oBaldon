@@ -153,6 +153,52 @@ def gen_dataset_teacher(
     return X[idx], y[idx], w_star, b_star
 
 
+# ---------- texto: truncate e quebra ----------
+def fit_text(dr: ImageDraw.ImageDraw, text: str, max_w: int) -> str:
+    if dr.textlength(text, font=FONT) <= max_w:
+        return text
+    ell = "…"
+    lo, hi = 0, len(text)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        cand = text[:mid] + ell
+        if dr.textlength(cand, font=FONT) <= max_w:
+            lo = mid + 1
+        else:
+            hi = mid
+    return text[:max(0, lo - 1)] + ell
+
+
+def wrap_text(dr: ImageDraw.ImageDraw, text: str, max_w: int) -> List[str]:
+    """
+    Quebra em múltiplas linhas por palavras para caber em max_w.
+    Se uma palavra isolada for maior que max_w, trunca com '…'.
+    """
+    words = text.split()
+    if not words:
+        return [""]
+
+    lines: List[str] = []
+    cur = words[0]
+
+    for w in words[1:]:
+        cand = f"{cur} {w}"
+        if dr.textlength(cand, font=FONT) <= max_w:
+            cur = cand
+        else:
+            # fecha linha atual
+            if dr.textlength(cur, font=FONT) > max_w:
+                cur = fit_text(dr, cur, max_w)
+            lines.append(cur)
+            cur = w
+
+    if dr.textlength(cur, font=FONT) > max_w:
+        cur = fit_text(dr, cur, max_w)
+    lines.append(cur)
+    return lines
+
+
+# ---------- normalização centralizada ----------
 def normalize_to_rect(
     X: np.ndarray,
     x0: float,
@@ -161,17 +207,6 @@ def normalize_to_rect(
     h: float,
     pad: float = 24.0,
 ) -> Tuple[np.ndarray, Tuple[float, float, float, float, float, float, float]]:
-    """
-    Normaliza X para caber no retângulo do plot, mantendo aspecto e CENTRALIZANDO.
-
-    Retorna:
-      Yn: pontos em pixels
-      tf: (xmin, ymin, xmax, ymax, s, ox, oy)
-        onde:
-          s  = escala
-          ox = offset x (origem do bloco útil)
-          oy = offset y (origem do bloco útil)
-    """
     xmin, ymin = float(X[:, 0].min()), float(X[:, 1].min())
     xmax, ymax = float(X[:, 0].max()), float(X[:, 1].max())
 
@@ -182,14 +217,12 @@ def normalize_to_rect(
     W = (xmax - xmin) * s
     H = (ymax - ymin) * s
 
-    # centraliza o bloco útil dentro do plot
     ox = x0 + (w - W) / 2.0
     oy = y0 + (h - H) / 2.0
 
     Yn = (X - np.array([xmin, ymin])) * s
     Yn[:, 0] = ox + Yn[:, 0]
-    Yn[:, 1] = oy + (H - Yn[:, 1])  # inverte Y dentro do bloco útil
-
+    Yn[:, 1] = oy + (H - Yn[:, 1])
     return Yn, (xmin, ymin, xmax, ymax, s, ox, oy)
 
 
@@ -199,7 +232,6 @@ def to_plot(
 ) -> Tuple[float, float]:
     xmin, ymin, xmax, ymax, s, ox, oy = tf
     H = (ymax - ymin) * s
-
     x = ox + (pt[0] - xmin) * s
     y = oy + (H - (pt[1] - ymin) * s)
     return float(x), float(y)
@@ -286,10 +318,8 @@ def perceptron_with_pocket_snaps(
     snaps: List[Snap] = []
     updates = 0
 
-    snaps.append(
-        Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
-             best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=0)
-    )
+    snaps.append(Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                      best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=0))
 
     for ep in range(1, epochs + 1):
         order = rng.permutation(X.shape[0])
@@ -313,10 +343,8 @@ def perceptron_with_pocket_snaps(
                     b_best = b
 
                 if updates % SNAP_EVERY_UPDATES == 0:
-                    snaps.append(
-                        Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
-                             best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=ep)
-                    )
+                    snaps.append(Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                                      best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=ep))
 
         if SNAP_EVERY_EPOCH:
             cur_acc = accuracy(X, y, w, b)
@@ -325,10 +353,8 @@ def perceptron_with_pocket_snaps(
                 w_best = w.copy()
                 b_best = b
 
-            snaps.append(
-                Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
-                     best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=ep)
-            )
+            snaps.append(Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                              best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=ep))
 
         if best_acc >= 0.999:
             break
@@ -380,7 +406,6 @@ def main() -> None:
         label_flip_p=LABEL_FLIP_P,
     )
 
-    # Normalização CENTRALIZADA (corrige viés à esquerda)
     Xv, tf = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
     xmin, ymin, xmax, ymax, _s, _ox, _oy = tf
     rect = (xmin, ymin, xmax, ymax)
@@ -398,6 +423,9 @@ def main() -> None:
     tweens = allocate_tweens(weights, TARGET_TOTAL_FRAMES, MIN_TWEEN, MAX_TWEEN)
 
     images: List[Image.Image] = []
+
+    # largura útil do painel esquerdo para texto (não invade o plot)
+    left_text_max_w = int(LEFT_W - 44)
 
     for i in range(len(snaps) - 1):
         s0 = snaps[i]
@@ -423,54 +451,65 @@ def main() -> None:
                 radius=16, fill=CARD, outline=STROKE, width=2
             )
 
+            # header
             dr.text((inner_x + 22, inner_y + 16), "Perceptron (Pocket)", fill=TEXT, font=FONT)
-            dr.text((inner_x + 210, inner_y + 20),
-                    f"epoch={s0.epoch} | updates={s0.updates}",
-                    fill=MUTED, font=FONT)
-            dr.text((inner_x + 210, inner_y + 36),
-                    f"seed={seed}",
-                    fill=MUTED, font=FONT)
 
+            # meta em duas linhas, sempre truncadas para caber no painel
+            meta1 = fit_text(dr, f"epoch={s0.epoch} | updates={s0.updates}", left_text_max_w)
+            meta2 = fit_text(dr, f"seed={seed}", left_text_max_w)
+            dr.text((inner_x + 210, inner_y + 20), meta1, fill=MUTED, font=FONT)
+            dr.text((inner_x + 210, inner_y + 36), meta2, fill=MUTED, font=FONT)
+
+            # barra
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
             dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h],
                                  radius=8, fill=BAR_BG, outline=STROKE)
             prog = max(0.0, min(1.0, best_acc))
             dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h],
                                  radius=8, fill=BAR_FILL)
-            dr.text(
-                (inner_x + 22, inner_y + 70),
-                f"best accuracy: {best_acc*100:5.1f}%   (current: {cur_acc*100:5.1f}%)",
-                fill=MUTED, font=FONT
-            )
+
+            # textos (quebrados)
+            y_cursor = inner_y + 70
+            line1 = fit_text(dr, f"best accuracy: {best_acc*100:5.1f}% (current: {cur_acc*100:5.1f}%)", left_text_max_w)
+            dr.text((inner_x + 22, y_cursor), line1, fill=MUTED, font=FONT)
+            y_cursor += 22
 
             sep_txt = "separável" if LABEL_FLIP_P == 0.0 else "não separável (ruído de rótulo)"
-            dr.text(
-                (inner_x + 22, inner_y + 92),
-                f"dataset: {sep_txt} | margin={MARGIN:.4f} | flip_p={LABEL_FLIP_P:.2f}",
-                fill=(120, 135, 155), font=FONT
-            )
+            ds = f"dataset: {sep_txt} | margin={MARGIN:.4f} | flip_p={LABEL_FLIP_P:.2f}"
+            for ln in wrap_text(dr, ds, left_text_max_w):
+                dr.text((inner_x + 22, y_cursor), ln, fill=(120, 135, 155), font=FONT)
+                y_cursor += 18
+            y_cursor += 10
 
-            lx, ly = inner_x + 22, inner_y + 122
+            # legenda classes
+            lx, ly = inner_x + 22, y_cursor + 8
             dr.rectangle([lx, ly - 10, lx + 12, ly + 2], fill=C_POS)
             dr.text((lx + 18, ly - 12), "y=+1", fill=MUTED, font=FONT)
             dr.rectangle([lx, ly + 18 - 10, lx + 12, ly + 18 + 2], fill=C_NEG)
             dr.text((lx + 18, ly + 18 - 12), "y=-1", fill=MUTED, font=FONT)
+            y_cursor = ly + 44
 
-            dr.text(
-                (inner_x + 22, inner_y + 168),
-                "linha verde: pocket (melhor até agora)\nlinha azul: estado atual",
-                fill=(120, 135, 155), font=FONT
-            )
+            # descrição linhas (quebra em 2 linhas controladas)
+            info_lines = [
+                "linha verde: pocket (melhor até agora)",
+                "linha azul: estado atual",
+            ]
+            for ln in info_lines:
+                dr.text((inner_x + 22, y_cursor), fit_text(dr, ln, left_text_max_w), fill=(120, 135, 155), font=FONT)
+                y_cursor += 18
 
+            # plot bg
             dr.rounded_rectangle(
                 [plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
                 radius=14, fill=(11, 18, 32), outline=STROKE
             )
 
+            # pontos
             r = POINT_R
             for idx, (px, py) in enumerate(Xv):
                 dr.ellipse([px - r, py - r, px + r, py + r], fill=(C_POS if y[idx] == 1 else C_NEG))
 
+            # linhas
             pA, pB = decision_line_points(w_best, b_best, rect)
             ax, ay = to_plot(pA, tf)
             bx, by = to_plot(pB, tf)
@@ -481,11 +520,10 @@ def main() -> None:
             bx2, by2 = to_plot(pB2, tf)
             dr.line([ax2, ay2, bx2, by2], fill=C_LINE_CUR, width=2)
 
-            dr.text(
-                (inner_x + 22, inner_y + inner_h - 26),
-                f"pocket w=[{w_best[0]: .2f}, {w_best[1]: .2f}]  b={b_best: .2f}",
-                fill=(100, 116, 139), font=FONT
-            )
+            # rodapé (também truncado)
+            footer = f"pocket w=[{w_best[0]: .2f}, {w_best[1]: .2f}]  b={b_best: .2f}"
+            dr.text((inner_x + 22, inner_y + inner_h - 26), fit_text(dr, footer, int(inner_w - 44)),
+                    fill=(100, 116, 139), font=FONT)
 
             images.append(im)
 
