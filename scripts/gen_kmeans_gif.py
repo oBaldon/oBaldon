@@ -14,28 +14,23 @@ from PIL import Image, ImageDraw, ImageFont
 # Configuração (ajuste aqui)
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
-
-# Fonte (garante UTF-8/acentos no GitHub Actions em ubuntu-latest)
 FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
 
 K = 4
 N_POINTS = 260
 
-EPOCHS = 26               # aparece como "iteração 1/26 ... 26/26"
-STEPS_PER_EPOCH = 14      # micro-passos por época (controle de duração)
-BATCH_SIZE = 28           # tamanho do mini-batch (pequeno = movimento suave)
+EPOCHS = 26
+STEPS_PER_EPOCH = 14
+BATCH_SIZE = 28
 
-# Frames
-TWEEN_PER_STEP = 2        # frames intermediários entre dois micro-estados (>=1)
+TWEEN_PER_STEP = 2
 FRAME_MS = 55
 HOLD_LAST = 14
 
-# Layout
+# Layout fixo do card
 CARD_PAD = 18
-LEFT_W = 320              # reduzido para sobrar mais espaço ao plot (corrige “metade direita vazia”)
+LEFT_W = 360
 GAP = 18
-
-# Header/spacing (corrige encavalamento de título/legenda)
 HEADER_H = 44
 
 # Visual
@@ -51,18 +46,18 @@ POINT_R = 3
 CENTER_R = 10
 
 COLORS = [
-    (37, 99, 235),   # azul
-    (22, 163, 74),   # verde
-    (245, 158, 11),  # amarelo
-    (239, 68, 68),   # vermelho
+    (37, 99, 235),
+    (22, 163, 74),
+    (245, 158, 11),
+    (239, 68, 68),
 ]
 
 
 @dataclass(frozen=True)
 class VizState:
-    centers: np.ndarray  # (k,2) em coordenadas "do dado"
-    labels: np.ndarray   # (n,) labels (0..k-1) para visualização
-    inertia: float       # métrica para barra (aprox, mas consistente)
+    centers: np.ndarray
+    labels: np.ndarray
+    inertia: float
 
 
 def seed_from_today() -> int:
@@ -71,40 +66,60 @@ def seed_from_today() -> int:
 
 
 def gen_points(rng: np.random.Generator, n: int) -> np.ndarray:
-    means = np.array([[-2.0, -1.5], [2.2, 1.7], [-1.0, 2.3], [2.5, -2.0]])
+    """
+    Gera 4 gaussianas, mas com 'spread' maior e means mais afastadas
+    para ocupar melhor a área do plot (evita concentração no lado esquerdo).
+    """
+    means = np.array([[-3.0, -2.4], [3.1, 2.6], [-2.2, 2.9], [3.4, -3.0]])
     covs = [
-        np.array([[0.45, 0.12], [0.12, 0.35]]),
-        np.array([[0.35, -0.10], [-0.10, 0.40]]),
-        np.array([[0.30, 0.08], [0.08, 0.30]]),
-        np.array([[0.40, -0.06], [-0.06, 0.30]]),
+        np.array([[0.95, 0.20], [0.20, 0.75]]),
+        np.array([[0.80, -0.22], [-0.22, 0.90]]),
+        np.array([[0.70, 0.16], [0.16, 0.70]]),
+        np.array([[0.90, -0.14], [-0.14, 0.70]]),
     ]
     pts = []
     for _ in range(n):
         j = int(rng.integers(0, len(means)))
         pts.append(rng.multivariate_normal(means[j], covs[j]))
-    return np.array(pts, dtype=float)
+    X = np.array(pts, dtype=float)
+
+    # “stretch” leve para ocupar mais área (global, mantendo proporções)
+    X[:, 0] *= 1.15
+    X[:, 1] *= 1.05
+    return X
 
 
 def assign_labels_and_inertia(X: np.ndarray, centers: np.ndarray) -> Tuple[np.ndarray, float]:
-    d2 = ((X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)  # (n,k)
+    d2 = ((X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
     labels = d2.argmin(axis=1)
     inertia = float(np.take_along_axis(d2, labels[:, None], axis=1).sum())
     return labels, inertia
 
 
-def normalize_to_rect(
-    X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 20.0
-) -> np.ndarray:
-    xmin, ymin = X.min(axis=0)
-    xmax, ymax = X.max(axis=0)
+def normalize_to_rect(X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 20.0) -> np.ndarray:
+    """
+    Normaliza X para caber no retângulo do plot, mantendo aspecto.
+    Estratégia para “preencher” melhor:
+    - Usa quantis (clipping) para evitar outliers encolhendo a escala.
+    """
+    # clipping robusto (remove outliers que comprimem o restante)
+    qx0, qx1 = np.quantile(X[:, 0], [0.02, 0.98])
+    qy0, qy1 = np.quantile(X[:, 1], [0.02, 0.98])
+
+    Xc = X.copy()
+    Xc[:, 0] = np.clip(Xc[:, 0], qx0, qx1)
+    Xc[:, 1] = np.clip(Xc[:, 1], qy0, qy1)
+
+    xmin, ymin = Xc.min(axis=0)
+    xmax, ymax = Xc.max(axis=0)
 
     sx = (w - 2 * pad) / (xmax - xmin + 1e-9)
     sy = (h - 2 * pad) / (ymax - ymin + 1e-9)
     s = min(sx, sy)
 
-    Yn = (X - np.array([xmin, ymin])) * s
-    Yn[:, 0] = x0 + pad + Yn[:, 0]
-    Yn[:, 1] = y0 + h - pad - Yn[:, 1]
+    Yn = (Xc - np.array([xmin, ymin])) * s
+    Yn[:, 0] = x0 + (w - (xmax - xmin) * s) / 2.0 + Yn[:, 0]  # centraliza no plot
+    Yn[:, 1] = y0 + (h - (ymax - ymin) * s) / 2.0 + (h - Yn[:, 1])  # centraliza e inverte y
     return Yn
 
 
@@ -121,12 +136,8 @@ def lerp_color(c0: Tuple[int, int, int], c1: Tuple[int, int, int], t: float) -> 
 
 
 def fit_text(dr: ImageDraw.ImageDraw, text: str, max_w: int) -> str:
-    """
-    Trunca com '…' para caber em max_w pixels.
-    """
     if dr.textlength(text, font=FONT) <= max_w:
         return text
-
     ell = "…"
     lo, hi = 0, len(text)
     while lo < hi:
@@ -149,7 +160,6 @@ def mini_batch_kmeans_states(
 ) -> List[VizState]:
     n = X.shape[0]
     centers = X[rng.choice(n, size=k, replace=False)].copy()
-
     counts = np.ones(k, dtype=np.int64)
 
     labels, inertia = assign_labels_and_inertia(X, centers)
@@ -181,18 +191,20 @@ def main() -> None:
     seed = seed_from_today()
     rng = np.random.default_rng(seed)
 
-    # Layout do card
+    # Card
     inner_x, inner_y = CARD_PAD, CARD_PAD
     inner_w, inner_h = CANVAS_W - 2 * CARD_PAD, CANVAS_H - 2 * CARD_PAD
 
-    # Ajuste: reservar header e evitar que legenda encoste no topo
+    # Área do plot (mantém layout do card; só muda a forma como normaliza/espalha)
     plot_x0 = inner_x + LEFT_W + GAP
     plot_y0 = inner_y + HEADER_H
     plot_w = inner_w - LEFT_W - GAP - 18
     plot_h = inner_h - (HEADER_H + 22)
 
-    # Dados e estados
+    # Dados
     X = gen_points(rng, N_POINTS)
+
+    # Estados
     states = mini_batch_kmeans_states(
         X=X,
         k=K,
@@ -202,7 +214,7 @@ def main() -> None:
         rng=rng
     )
 
-    # Normalização para o plot (agora com área maior e centralização correta)
+    # Normalização robusta + centralização (preenche melhor o frame)
     Xv = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
 
     centers_all = np.vstack([st.centers for st in states])
@@ -215,14 +227,11 @@ def main() -> None:
 
     images: List[Image.Image] = []
 
-    # estados = 1 + EPOCHS*STEPS_PER_EPOCH
-    def state_to_epoch_step(s_idx: int) -> Tuple[int, int]:
+    def state_to_epoch(s_idx: int) -> int:
         if s_idx == 0:
-            return (0, 0)
+            return 0
         s = s_idx - 1
-        epoch = s // STEPS_PER_EPOCH + 1
-        step = s % STEPS_PER_EPOCH + 1
-        return (epoch, step)
+        return s // STEPS_PER_EPOCH + 1
 
     def draw_frame(
         centers_xy: np.ndarray,
@@ -240,7 +249,6 @@ def main() -> None:
             radius=16, fill=CARD, outline=STROKE, width=2
         )
 
-        # Header (fixo, sem sobrepor)
         title = "K-means (mini-batch)"
         dr.text((inner_x + 22, inner_y + 14), title, fill=TEXT, font=FONT)
 
@@ -258,13 +266,13 @@ def main() -> None:
         prog = max(0.0, min(1.0, prog))
         dr.rounded_rectangle([bar_x, bar_y, bar_x + int(bar_w * prog), bar_y + bar_h], radius=8, fill=BAR_FILL)
 
-        # Legenda (empurrada para baixo para não encavalar no header)
+        # Legenda
         lx, ly = inner_x + 22, inner_y + 74
         for j in range(K):
             dr.rectangle([lx, ly + j * 22 - 10, lx + 12, ly + j * 22 + 2], fill=COLORS[j])
             dr.text((lx + 18, ly + j * 22 - 12), f"cluster {j}", fill=MUTED, font=FONT)
 
-        # Plot BG (agora ocupa quase todo lado direito e não “vaza”)
+        # Plot BG
         dr.rounded_rectangle(
             [plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
             radius=14, fill=(11, 18, 32), outline=STROKE
@@ -281,10 +289,8 @@ def main() -> None:
         # Centróides
         for j in range(K):
             cx, cy = float(centers_xy[j, 0]), float(centers_xy[j, 1])
-            dr.ellipse(
-                [cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R],
-                fill=COLORS[j], outline=TEXT, width=2
-            )
+            dr.ellipse([cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R],
+                       fill=COLORS[j], outline=TEXT, width=2)
 
         return im
 
@@ -294,11 +300,11 @@ def main() -> None:
         c0 = centers_v_all[i]
         c1 = centers_v_all[i + 1]
 
-        epoch, _step = state_to_epoch_step(i + 1)
+        epoch = state_to_epoch(i + 1)
         nsub = max(1, TWEEN_PER_STEP)
 
         for s in range(nsub):
-            t = s / float(nsub)  # 0..(nsub-1)/nsub
+            t = s / float(nsub)
             centers_xy = lerp(c0, c1, t)
             inertia = (1.0 - t) * float(st0.inertia) + t * float(st1.inertia)
             images.append(
@@ -312,7 +318,6 @@ def main() -> None:
                 )
             )
 
-    # Hold final
     if images:
         last = images[-1]
         for _ in range(HOLD_LAST):
