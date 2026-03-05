@@ -270,7 +270,7 @@ def main() -> None:
             dr.text((inner_x + 22, inner_y + 16), "K-means", fill=TEXT)
             dr.text(
                 (inner_x + 120, inner_y + 20),
-                f"k={K} | iteration={i+1}/{len(frames)} | seed={seed}",
+                f"k={K} | target={TARGET_TOTAL_FRAMES} | w_flip={W_FLIP} | seed={seed}",
                 fill=MUTED
             )
 
