@@ -39,15 +39,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Generate SVGs
+      - name: Generate visualizations
         run: |
-          python scripts/gen_kmeans_svg.py
-          python scripts/gen_astar_svg.py
+          python scripts/gen_kmeans_gif.py
+          python scripts/gen_astar_gif.py
 
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update algorithm visualizations"
-          file_pattern: "assets/*.svg"
+          file_pattern: "assets/*.gif"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
