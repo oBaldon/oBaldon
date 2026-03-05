@@ -109,7 +109,26 @@ def lerp_color(c0: Tuple[int, int, int], c1: Tuple[int, int, int], t: float) -> 
         int(round((1.0 - t) * c0[1] + t * c1[1])),
         int(round((1.0 - t) * c0[2] + t * c1[2])),
     )
+    
+def fit_text(dr: ImageDraw.ImageDraw, text: str, max_w: int) -> str:
+    """
+    Trunca com '…' para caber em max_w pixels.
+    Usa a fonte padrão do Pillow (não depende de assets).
+    """
+    if dr.textlength(text) <= max_w:
+        return text
 
+    ell = "…"
+    lo, hi = 0, len(text)
+    # busca binária no comprimento do prefixo
+    while lo < hi:
+        mid = (lo + hi) // 2
+        cand = text[:mid] + ell
+        if dr.textlength(cand) <= max_w:
+            lo = mid + 1
+        else:
+            hi = mid
+    return text[:max(0, lo - 1)] + ell
 
 def mini_batch_kmeans_states(
     X: np.ndarray,
@@ -217,13 +236,24 @@ def main() -> None:
             radius=16, fill=CARD, outline=STROKE, width=2
         )
 
-        # Cabeçalho: mostra época/step real para você verificar pacing
-        dr.text((inner_x + 22, inner_y + 16), "K-means (mini-batch)", fill=TEXT)
-        dr.text(
-            (inner_x + 220, inner_y + 20),
-            f"k={K} | iteração={epoch_idx}/{EPOCHS} | passo={step_in_epoch}/{STEPS_PER_EPOCH} | sub={subframe}/{subframe_total} | seed={seed}",
-            fill=MUTED
+        # Cabeçalho
+        title = "K-means (mini-batch)"
+        dr.text((inner_x + 22, inner_y + 16), title, fill=TEXT)
+
+        meta = (
+            f"k={K} | iteração={epoch_idx}/{EPOCHS} | "
+            f"passo={step_in_epoch}/{STEPS_PER_EPOCH} | "
+            f"sub={subframe}/{subframe_total} | seed={seed}"
         )
+
+        # espaço disponível: do fim do título até a borda interna do card
+        title_w = int(dr.textlength(title))
+        meta_x = inner_x + 22 + title_w + 14
+        meta_y = inner_y + 20
+        meta_max_w = int((inner_x + inner_w) - 22 - meta_x)
+
+        meta = fit_text(dr, meta, meta_max_w)
+        dr.text((meta_x, meta_y), meta, fill=MUTED)
 
         # Barra inertia
         bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
