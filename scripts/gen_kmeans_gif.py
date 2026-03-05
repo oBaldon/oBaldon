@@ -20,7 +20,7 @@ N_POINTS = 260
 ITERS = 26  # número máximo de iterações do Lloyd (k-means padrão)
 
 # Pacing do GIF
-TARGET_TOTAL_FRAMES = 320   # total aproximado (mais alto = mais fluido, mais pesado)
+TARGET_TOTAL_FRAMES = 380   # total aproximado (mais alto = mais fluido, mais pesado)
 MIN_TWEEN = 3               # mínimo de subframes por iteração
 MAX_TWEEN = 18              # máximo de subframes por iteração
 FRAME_MS = 55               # ms por frame (evite <40; GitHub/viewers podem clamping)
@@ -28,7 +28,7 @@ HOLD_LAST = 10              # frames finais para "segurar" o resultado
 
 # Peso de "mudança" por iteração
 W_MOVE = 1.0                # peso do deslocamento dos centróides
-W_FLIP = 1.2                # peso de troca de rótulos (0..1) dos pontos
+W_FLIP = 1.6                # peso de troca de rótulos (0..1) dos pontos
 
 POINT_R = 3
 CENTER_R = 10
