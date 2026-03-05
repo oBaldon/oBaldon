@@ -8,3 +8,6 @@
 
 ### Perceptron (primeira rede neural)
 ![Perceptron](./assets/perceptron.gif)
+
+### Gradient Descent (logistic regression)
+![Gradient Descent](assets/gradient_descent.gif)
