@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 # =========================
-# Configuração (ajuste aqui)
+# Configuração
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
 FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
@@ -27,7 +27,7 @@ TWEEN_PER_STEP = 2
 FRAME_MS = 55
 HOLD_LAST = 14
 
-# Layout fixo do card
+# Layout do card (mantido)
 CARD_PAD = 18
 LEFT_W = 360
 GAP = 18
@@ -66,10 +66,6 @@ def seed_from_today() -> int:
 
 
 def gen_points(rng: np.random.Generator, n: int) -> np.ndarray:
-    """
-    Gera 4 gaussianas, mas com 'spread' maior e means mais afastadas
-    para ocupar melhor a área do plot (evita concentração no lado esquerdo).
-    """
     means = np.array([[-3.0, -2.4], [3.1, 2.6], [-2.2, 2.9], [3.4, -3.0]])
     covs = [
         np.array([[0.95, 0.20], [0.20, 0.75]]),
@@ -82,8 +78,6 @@ def gen_points(rng: np.random.Generator, n: int) -> np.ndarray:
         j = int(rng.integers(0, len(means)))
         pts.append(rng.multivariate_normal(means[j], covs[j]))
     X = np.array(pts, dtype=float)
-
-    # “stretch” leve para ocupar mais área (global, mantendo proporções)
     X[:, 0] *= 1.15
     X[:, 1] *= 1.05
     return X
@@ -96,30 +90,40 @@ def assign_labels_and_inertia(X: np.ndarray, centers: np.ndarray) -> Tuple[np.nd
     return labels, inertia
 
 
-def normalize_to_rect(X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 20.0) -> np.ndarray:
+def normalize_to_rect(
+    X: np.ndarray,
+    x0: float,
+    y0: float,
+    w: float,
+    h: float,
+    pad: float = 24.0,
+) -> np.ndarray:
     """
-    Normaliza X para caber no retângulo do plot, mantendo aspecto.
-    Estratégia para “preencher” melhor:
-    - Usa quantis (clipping) para evitar outliers encolhendo a escala.
+    Normaliza X para caber estritamente no retângulo [x0,x0+w]x[y0,y0+h],
+    mantendo aspecto e centralizando.
+    Importante: NÃO usa clipping; usa min/max reais para garantir que nada escape.
     """
-    # clipping robusto (remove outliers que comprimem o restante)
-    qx0, qx1 = np.quantile(X[:, 0], [0.02, 0.98])
-    qy0, qy1 = np.quantile(X[:, 1], [0.02, 0.98])
-
-    Xc = X.copy()
-    Xc[:, 0] = np.clip(Xc[:, 0], qx0, qx1)
-    Xc[:, 1] = np.clip(Xc[:, 1], qy0, qy1)
-
-    xmin, ymin = Xc.min(axis=0)
-    xmax, ymax = Xc.max(axis=0)
+    xmin, ymin = X.min(axis=0)
+    xmax, ymax = X.max(axis=0)
 
     sx = (w - 2 * pad) / (xmax - xmin + 1e-9)
     sy = (h - 2 * pad) / (ymax - ymin + 1e-9)
     s = min(sx, sy)
 
-    Yn = (Xc - np.array([xmin, ymin])) * s
-    Yn[:, 0] = x0 + (w - (xmax - xmin) * s) / 2.0 + Yn[:, 0]  # centraliza no plot
-    Yn[:, 1] = y0 + (h - (ymax - ymin) * s) / 2.0 + (h - Yn[:, 1])  # centraliza e inverte y
+    W = (xmax - xmin) * s
+    H = (ymax - ymin) * s
+
+    # offsets para centralizar o "conteúdo útil" no plot
+    ox = x0 + (w - W) / 2.0
+    oy = y0 + (h - H) / 2.0
+
+    Yn = (X - np.array([xmin, ymin])) * s
+    Yn[:, 0] = ox + Yn[:, 0]
+    Yn[:, 1] = oy + (H - Yn[:, 1])  # inverte y dentro do bloco útil
+
+    # Sanity clamp: garante dentro do plot com tolerância mínima
+    Yn[:, 0] = np.clip(Yn[:, 0], x0 + 1.0, x0 + w - 1.0)
+    Yn[:, 1] = np.clip(Yn[:, 1], y0 + 1.0, y0 + h - 1.0)
     return Yn
 
 
@@ -191,20 +195,16 @@ def main() -> None:
     seed = seed_from_today()
     rng = np.random.default_rng(seed)
 
-    # Card
     inner_x, inner_y = CARD_PAD, CARD_PAD
     inner_w, inner_h = CANVAS_W - 2 * CARD_PAD, CANVAS_H - 2 * CARD_PAD
 
-    # Área do plot (mantém layout do card; só muda a forma como normaliza/espalha)
     plot_x0 = inner_x + LEFT_W + GAP
     plot_y0 = inner_y + HEADER_H
     plot_w = inner_w - LEFT_W - GAP - 18
     plot_h = inner_h - (HEADER_H + 22)
 
-    # Dados
     X = gen_points(rng, N_POINTS)
 
-    # Estados
     states = mini_batch_kmeans_states(
         X=X,
         k=K,
@@ -214,7 +214,7 @@ def main() -> None:
         rng=rng
     )
 
-    # Normalização robusta + centralização (preenche melhor o frame)
+    # Normalização estrita (garante nada fora)
     Xv = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
 
     centers_all = np.vstack([st.centers for st in states])
@@ -259,7 +259,7 @@ def main() -> None:
         meta = fit_text(dr, meta, meta_max_w)
         dr.text((meta_x, meta_y), meta, fill=MUTED, font=FONT)
 
-        # Barra inertia
+        # Barra
         bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 44, LEFT_W - 44, 12
         dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=8, fill=BAR_BG, outline=STROKE)
         prog = 1.0 - (inertia - inertiaN) / (inertia0 - inertiaN + 1e-9)
@@ -278,19 +278,36 @@ def main() -> None:
             radius=14, fill=(11, 18, 32), outline=STROKE
         )
 
-        # Pontos
+        # Pontos (desenho com clamp para não vazar mesmo com raio)
         r = POINT_R
-        for p_idx, (px, py) in enumerate(Xv):
+        x_min = plot_x0 + 1 + r
+        x_max = plot_x0 + plot_w - 1 - r
+        y_min = plot_y0 + 1 + r
+        y_max = plot_y0 + plot_h - 1 - r
+
+        for p_idx, (px0, py0) in enumerate(Xv):
+            px = float(np.clip(px0, x_min, x_max))
+            py = float(np.clip(py0, y_min, y_max))
             c0 = COLORS[int(labels_from[p_idx])]
             c1 = COLORS[int(labels_to[p_idx])]
             c = c0 if c0 == c1 else lerp_color(c0, c1, blend_t)
             dr.ellipse([px - r, py - r, px + r, py + r], fill=c)
 
-        # Centróides
+        # Centróides (clamp idem)
+        cr = CENTER_R
+        cx_min = plot_x0 + 1 + cr
+        cx_max = plot_x0 + plot_w - 1 - cr
+        cy_min = plot_y0 + 1 + cr
+        cy_max = plot_y0 + plot_h - 1 - cr
+
         for j in range(K):
-            cx, cy = float(centers_xy[j, 0]), float(centers_xy[j, 1])
-            dr.ellipse([cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R],
-                       fill=COLORS[j], outline=TEXT, width=2)
+            cx0, cy0 = float(centers_xy[j, 0]), float(centers_xy[j, 1])
+            cx = float(np.clip(cx0, cx_min, cx_max))
+            cy = float(np.clip(cy0, cy_min, cy_max))
+            dr.ellipse(
+                [cx - cr, cy - cr, cx + cr, cy + cr],
+                fill=COLORS[j], outline=TEXT, width=2
+            )
 
         return im
 
@@ -307,16 +324,7 @@ def main() -> None:
             t = s / float(nsub)
             centers_xy = lerp(c0, c1, t)
             inertia = (1.0 - t) * float(st0.inertia) + t * float(st1.inertia)
-            images.append(
-                draw_frame(
-                    centers_xy=centers_xy,
-                    labels_from=st0.labels,
-                    labels_to=st1.labels,
-                    blend_t=t,
-                    inertia=inertia,
-                    epoch_idx=epoch
-                )
-            )
+            images.append(draw_frame(centers_xy, st0.labels, st1.labels, t, inertia, epoch))
 
     if images:
         last = images[-1]
