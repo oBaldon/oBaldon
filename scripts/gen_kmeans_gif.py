@@ -241,9 +241,8 @@ def main() -> None:
         dr.text((inner_x + 22, inner_y + 16), title, fill=TEXT)
 
         meta = (
-            f"k={K} | iteração={epoch_idx}/{EPOCHS} | "
-            f"passo={step_in_epoch}/{STEPS_PER_EPOCH} | "
-            f"sub={subframe}/{subframe_total} | seed={seed}"
+            f"k={K} | iteration={epoch_idx}/{EPOCHS} | "
+            f"seed={seed}"
         )
 
         # espaço disponível: do fim do título até a borda interna do card
