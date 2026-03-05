@@ -17,10 +17,11 @@ CANVAS_W, CANVAS_H = 980, 360  # grande
 K = 4
 N_POINTS = 260
 
-ITERS = 26           # iterações reais
-TWEEN_STEPS = 10     # mais tween = menos "quadro a quadro"
+ITERS = 26           # iterações exibidas
+ALPHA = 0.28         # 0<ALPHA<1: desacelera convergência para durar mais iterações (0.20–0.40)
+TWEEN_STEPS = 10     # frames intermediários por iteração
 HOLD_LAST = 16
-FRAME_MS = 55        # ~18 fps perceptivo
+FRAME_MS = 55        # ms por frame (~18 fps)
 
 POINT_R = 3
 CENTER_R = 10
@@ -75,21 +76,34 @@ def gen_points(rng: np.random.Generator, n: int) -> np.ndarray:
 
 
 def kmeans_frames(X: np.ndarray, k: int, iters: int, rng: np.random.Generator) -> List[KMFrame]:
+    """
+    K-means com atualização amortecida:
+      centers <- (1-ALPHA)*centers + ALPHA*mu
+    Isso evita convergência "instantânea" e mantém movimento perceptível por mais iterações.
+    """
     n = X.shape[0]
     centers = X[rng.choice(n, size=k, replace=False)].copy()
     frames: List[KMFrame] = []
 
     for _ in range(iters):
+        # Atribuição (labels)
         d2 = ((X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
         labels = d2.argmin(axis=1)
 
-        new_centers = centers.copy()
+        # Médias por cluster (mu)
+        mu = centers.copy()
         for j in range(k):
             m = labels == j
             if m.any():
-                new_centers[j] = X[m].mean(axis=0)
+                mu[j] = X[m].mean(axis=0)
 
-        inertia = float(np.take_along_axis(d2, labels[:, None], axis=1).sum())
+        # Atualização amortecida (desacelera convergência)
+        new_centers = (1.0 - ALPHA) * centers + ALPHA * mu
+
+        # Inertia calculada com os novos centróides (consistente com o frame)
+        d2_new = ((X[:, None, :] - new_centers[None, :, :]) ** 2).sum(axis=2)
+        inertia = float(np.take_along_axis(d2_new, labels[:, None], axis=1).sum())
+
         frames.append(KMFrame(centers=new_centers.copy(), labels=labels.copy(), inertia=inertia))
         centers = new_centers
 
@@ -140,10 +154,10 @@ def main() -> None:
     X = gen_points(rng, N_POINTS)
     frames = kmeans_frames(X, K, ITERS, rng)
 
-    # pontos sempre no painel correto
+    # Pontos sempre no painel correto
     Xv = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
 
-    # centróides normalizados por frame
+    # Centróides normalizados por frame (mesmo mapeamento do plot)
     centers_all = np.vstack([f.centers for f in frames])
     concat = np.vstack([X, centers_all])
     concat_v = normalize_to_rect(concat, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
@@ -154,7 +168,7 @@ def main() -> None:
 
     images: List[Image.Image] = []
 
-    # Monta timeline com tween e cross-fade de labels (principal ganho)
+    # Timeline com tween e cross-fade de labels
     for i in range(len(frames) - 1):
         c0 = centers_v[i]
         c1 = centers_v[i + 1]
@@ -176,14 +190,15 @@ def main() -> None:
                 radius=16, fill=CARD, outline=STROKE, width=2
             )
 
+            # Cabeçalho: mostrar iteração e frame de forma explícita
             dr.text((inner_x + 22, inner_y + 16), "K-means", fill=TEXT)
             dr.text(
                 (inner_x + 120, inner_y + 20),
-                f"k={K} | iteração={i+1}/{len(frames)} | seed={seed}",
+                f"k={K} | iteração={i+1}/{len(frames)} | subframe={s+1}/{TWEEN_STEPS} | seed={seed}",
                 fill=MUTED
             )
 
-            # barra inertia
+            # Barra de inertia
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
             dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=8, fill=BAR_BG, outline=STROKE)
             prog = 1.0 - (inertia - inertiaN) / (inertia0 - inertiaN + 1e-9)
@@ -191,19 +206,19 @@ def main() -> None:
             fill_w = int(bar_w * prog)
             dr.rounded_rectangle([bar_x, bar_y, bar_x + fill_w, bar_y + bar_h], radius=8, fill=BAR_FILL)
 
-            # legenda
+            # Legenda
             lx, ly = inner_x + 22, inner_y + 86
             for j in range(K):
                 dr.rectangle([lx, ly + j * 22 - 10, lx + 12, ly + j * 22 + 2], fill=COLORS[j])
                 dr.text((lx + 18, ly + j * 22 - 12), f"cluster {j}", fill=MUTED)
 
-            # plot bg
+            # Plot BG
             dr.rounded_rectangle(
                 [plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
                 radius=14, fill=(11, 18, 32), outline=STROKE
             )
 
-            # pontos com cross-fade de cor se trocar de cluster
+            # Pontos com cross-fade se trocar de cluster
             r = POINT_R
             for p_idx, (px, py) in enumerate(Xv):
                 c_old = COLORS[int(l0[p_idx])]
@@ -211,7 +226,7 @@ def main() -> None:
                 c = c_old if c_old == c_new else lerp_color(c_old, c_new, t)
                 dr.ellipse([px - r, py - r, px + r, py + r], fill=c)
 
-            # centróides suavizados
+            # Centróides suavizados
             for j in range(K):
                 cx, cy = float(centers_xy[j, 0]), float(centers_xy[j, 1])
                 dr.ellipse(
@@ -222,7 +237,7 @@ def main() -> None:
             dr.text((inner_x + 22, inner_y + inner_h - 26), "gerado automaticamente (GIF)", fill=(100, 116, 139))
             images.append(im)
 
-    # último frame + hold
+    # Último frame + hold
     last_centers = centers_v[-1]
     last_labels = frames[-1].labels
     last_inertia = float(frames[-1].inertia)
@@ -230,9 +245,11 @@ def main() -> None:
     def render_last() -> Image.Image:
         im = Image.new("RGB", (CANVAS_W, CANVAS_H), BG)
         dr = ImageDraw.Draw(im)
-        dr.rounded_rectangle([inner_x, inner_y, inner_x + inner_w, inner_y + inner_h], radius=16, fill=CARD, outline=STROKE, width=2)
+
+        dr.rounded_rectangle([inner_x, inner_y, inner_x + inner_w, inner_y + inner_h],
+                             radius=16, fill=CARD, outline=STROKE, width=2)
         dr.text((inner_x + 22, inner_y + 16), "K-means", fill=TEXT)
-        dr.text((inner_x + 120, inner_y + 20), f"k={K} | final | seed={seed}", fill=MUTED)
+        dr.text((inner_x + 120, inner_y + 20), f"k={K} | final | iteração={len(frames)}/{len(frames)} | seed={seed}", fill=MUTED)
 
         bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
         dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=8, fill=BAR_BG, outline=STROKE)
@@ -255,7 +272,8 @@ def main() -> None:
 
         for j in range(K):
             cx, cy = float(last_centers[j, 0]), float(last_centers[j, 1])
-            dr.ellipse([cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R], fill=COLORS[j], outline=TEXT, width=2)
+            dr.ellipse([cx - CENTER_R, cy - CENTER_R, cx + CENTER_R, cy + CENTER_R],
+                       fill=COLORS[j], outline=TEXT, width=2)
 
         dr.text((inner_x + 22, inner_y + inner_h - 26), "gerado automaticamente (GIF)", fill=(100, 116, 139))
         return im
