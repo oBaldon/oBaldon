@@ -6,19 +6,19 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from PIL import ImageFont
+
 import heapq
-
-
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 
 # =========================
 # Configuração (ajuste aqui)
 # =========================
 CANVAS_W, CANVAS_H = 980, 360  # "grande"
-FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
+
+# Fonte (garante acentos/UTF-8 no GitHub Actions em ubuntu-latest)
+FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
 
 GW, GH = 44, 18          # grid maior (visual melhor)
 OBSTACLE_P = 0.27
@@ -44,7 +44,10 @@ TEXT = (229, 231, 235)
 MUTED = (148, 163, 184)
 
 EMPTY = (11, 18, 32)
-OBS = (17, 24, 39)
+
+# Ajuste solicitado: obstáculos visíveis (cinza, não “colado” no fundo)
+OBS = (100, 116, 139)  # cinza slate
+
 OPEN_C = (29, 78, 216)
 CLOSED_C = (14, 165, 233)
 PATH_C = (34, 197, 94)
@@ -127,7 +130,6 @@ def astar_collect_snaps(grid: np.ndarray, start: Pos, goal: Pos) -> Tuple[List[A
         if cur_for_path is None:
             path = []
         else:
-            # caminho parcial (se existir)
             path = reconstruct(came, cur_for_path) if (cur_for_path == start or cur_for_path in came) else []
         snaps.append(AStarSnap(sorted(open_set), sorted(closed_set), path))
 
@@ -146,7 +148,6 @@ def astar_collect_snaps(grid: np.ndarray, start: Pos, goal: Pos) -> Tuple[List[A
 
         if cur == goal:
             found = True
-            # snapshot do goal (parcial)
             snapshot(cur)
             break
 
@@ -172,12 +173,18 @@ def astar_collect_snaps(grid: np.ndarray, start: Pos, goal: Pos) -> Tuple[List[A
     if not found:
         return snaps, None
 
-    # caminho final completo
     final_path = reconstruct(came, goal) if (goal in came or goal == start) else [start]
     return snaps, final_path
 
 
-def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[AStarSnap], final_path: Optional[List[Pos]], seed: int) -> None:
+def render_snaps_to_gif(
+    grid: np.ndarray,
+    start: Pos,
+    goal: Pos,
+    snaps: List[AStarSnap],
+    final_path: Optional[List[Pos]],
+    seed: int
+) -> None:
     Path("assets").mkdir(parents=True, exist_ok=True)
     out = Path("assets/astar.gif")
 
@@ -185,27 +192,27 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
     inner_x, inner_y = CARD_PAD, CARD_PAD
     inner_w, inner_h = CANVAS_W - 2 * CARD_PAD, CANVAS_H - 2 * CARD_PAD
 
+    # Ajuste solicitado: evitar que a linha "grid | frames | seed" encoste no frame do card.
+    # Mantém o texto no topo com folga e desloca grid para baixo.
+    HEADER_H = 44
     grid_x0 = inner_x + LEFT_W + GAP
-    grid_y0 = inner_y + 38
+    grid_y0 = inner_y + HEADER_H
     grid_w = inner_w - LEFT_W - GAP - 18
-    grid_h = inner_h - 60
+    grid_h = inner_h - (HEADER_H + 22)
 
     cell = min(grid_w / GW, grid_h / GH)
     gx = grid_x0 + (grid_w - GW * cell) / 2
     gy = grid_y0 + (grid_h - GH * cell) / 2
 
-    # Constrói a linha do tempo: snaps + "path reveal" + hold
+    # Linha do tempo: snaps + path reveal + hold
     timeline: List[AStarSnap] = []
     timeline.extend(snaps)
 
     if final_path is not None and len(final_path) > 0:
-        # revela o caminho progressivamente para alongar e dar "acabamento"
         for i in range(1, len(final_path) + 1, PATH_REVEAL_STEP):
             partial = final_path[:i]
-            # usa último open/closed conhecido
             base = timeline[-1] if timeline else AStarSnap([], [], [])
             timeline.append(AStarSnap(base.open_set, base.closed_set, partial))
-        # garante o caminho completo
         base = timeline[-1]
         timeline.append(AStarSnap(base.open_set, base.closed_set, final_path))
 
@@ -216,7 +223,7 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
 
     images: List[Image.Image] = []
 
-    for t, fr in enumerate(timeline):
+    for fr in timeline:
         im = Image.new("RGB", (CANVAS_W, CANVAS_H), BG)
         dr = ImageDraw.Draw(im)
 
@@ -226,14 +233,15 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
             radius=16, fill=CARD, outline=STROKE, width=2
         )
 
-        dr.text((inner_x + 22, inner_y + 16), "A*", fill=TEXT, font=FONT)
+        # Header
+        dr.text((inner_x + 22, inner_y + 14), "A*", fill=TEXT, font=FONT)
         dr.text(
-            (inner_x + 60, inner_y + 20),
+            (inner_x + 60, inner_y + 16),
             f"grid={GW}x{GH} | frames={len(timeline)} | seed={seed}",
             fill=MUTED, font=FONT
         )
 
-        # Legenda
+        # Legenda (esquerda)
         lx, ly = inner_x + 22, inner_y + 64
         legend = [
             ("open", OPEN_C),
@@ -247,8 +255,11 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
             dr.rectangle([lx, ly + i * 20 - 10, lx + 12, ly + i * 20 + 2], fill=col)
             dr.text((lx + 18, ly + i * 20 - 12), name, fill=MUTED, font=FONT)
 
-        # Grid background
-        dr.rounded_rectangle([gx - 12, gy - 12, gx + GW * cell + 12, gy + GH * cell + 12], radius=14, fill=(11, 18, 32), outline=STROKE)
+        # Background do grid
+        dr.rounded_rectangle(
+            [gx - 12, gy - 12, gx + GW * cell + 12, gy + GH * cell + 12],
+            radius=14, fill=EMPTY, outline=STROKE
+        )
 
         open_set = set(fr.open_set)
         closed_set = set(fr.closed_set)
@@ -275,11 +286,17 @@ def render_snaps_to_gif(grid: np.ndarray, start: Pos, goal: Pos, snaps: List[ASt
                     if p == goal:
                         col = GOAL_C
 
+                # outline=CARD mantido para “gridlines” suaves
                 dr.rectangle([rx, ry, rx + cell - 1.0, ry + cell - 1.0], fill=col, outline=CARD)
 
         # Rodapé
         status = "found" if final_path is not None else "no-path"
-        dr.text((inner_x + 22, inner_y + inner_h - 26), f"status={status} (GIF)", fill=(100, 116, 139), font=FONT)
+        dr.text(
+            (inner_x + 22, inner_y + inner_h - 26),
+            f"status={status} (GIF)",
+            fill=(100, 116, 139),
+            font=FONT
+        )
 
         images.append(im)
 
@@ -311,7 +328,6 @@ def main() -> None:
             break
 
     if grid is None:
-        # fallback: reduz obstáculos para aumentar chance de caminho
         p2 = max(0.12, OBSTACLE_P - 0.10)
         grid = (rng.random((GH, GW)) < p2).astype(np.uint8)
         grid[start[1], start[0]] = 0
