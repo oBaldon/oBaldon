@@ -15,12 +15,12 @@ from PIL import Image, ImageDraw
 # Configuração
 # =========================
 CANVAS_W, CANVAS_H = 980, 360
-FONT = ImageFont.truetype("DejaVuSans.ttf", 14)
+FONT = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
 
 N_TOTAL = 420
-NOISE_X = 1.00           # ruído nas features
-MARGIN = 0.0001           # força |w*·x + b*| >= MARGIN
-LABEL_FLIP_P = 0     # 0 => separável; >0 => não separável (teoria permite não chegar a 100%)
+NOISE_X = 1.00
+MARGIN = 0.0001
+LABEL_FLIP_P = 0.0
 
 EPOCHS = 26
 LR = 0.05
@@ -54,10 +54,10 @@ BAR_BG = (17, 24, 39)
 BAR_FILL = (34, 197, 94)
 
 # Classes
-C_NEG = (239, 68, 68)       # -1
-C_POS = (37, 99, 235)       # +1
-C_LINE_POCKET = (34, 197, 94)   # pocket (best) — verde
-C_LINE_CUR = (56, 189, 248)     # atual — azul claro
+C_NEG = (239, 68, 68)           # -1
+C_POS = (37, 99, 235)           # +1
+C_LINE_POCKET = (34, 197, 94)   # pocket
+C_LINE_CUR = (56, 189, 248)     # atual
 
 
 @dataclass(frozen=True)
@@ -93,15 +93,6 @@ def gen_dataset_teacher(
     margin: float,
     label_flip_p: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """
-    Dataset por hiperplano professor (w*, b*).
-    - Gera pontos X ~ N(0, noise_x) e aceita apenas se |w*·x + b*| >= margin (margem).
-    - Rotula pelo sinal do professor.
-    - Opcional: ruído de rótulo (label_flip_p), quebrando separabilidade.
-    - Balanceia aproximadamente classes aceitando de forma controlada.
-    Retorna: X, y, w*, b*.
-    """
-    # professor
     w_star = rng.normal(0.0, 1.0, size=(2,))
     w_star = w_star / (np.linalg.norm(w_star) + 1e-12)
     b_star = float(rng.normal(0.0, 0.25))
@@ -109,7 +100,6 @@ def gen_dataset_teacher(
     X_list: List[np.ndarray] = []
     y_list: List[int] = []
 
-    # tenta balancear: metade +1, metade -1
     target_pos = n_total // 2
     target_neg = n_total - target_pos
     got_pos = 0
@@ -139,7 +129,6 @@ def gen_dataset_teacher(
         y_list.append(int(yi))
 
     if len(X_list) < n_total:
-        # fallback: completa sem balanceamento estrito
         while len(X_list) < n_total and tries < max_tries * 2:
             tries += 1
             x = rng.normal(0.0, noise_x, size=(2,))
@@ -153,23 +142,36 @@ def gen_dataset_teacher(
     X = np.vstack(X_list).astype(float)
     y = np.array(y_list, dtype=int)
 
-    # Ruído de rótulo (não separável)
     if label_flip_p > 0.0:
         flip = rng.random(size=y.shape[0]) < label_flip_p
-        # garante pelo menos 1 flip para evitar "por acaso separável"
         if not flip.any():
             flip[rng.integers(0, y.shape[0])] = True
         y = y.copy()
         y[flip] *= -1
 
-    # embaralhar
     idx = rng.permutation(X.shape[0])
     return X[idx], y[idx], w_star, b_star
 
 
 def normalize_to_rect(
-    X: np.ndarray, x0: float, y0: float, w: float, h: float, pad: float = 24.0
-) -> Tuple[np.ndarray, Tuple[float, float, float, float]]:
+    X: np.ndarray,
+    x0: float,
+    y0: float,
+    w: float,
+    h: float,
+    pad: float = 24.0,
+) -> Tuple[np.ndarray, Tuple[float, float, float, float, float, float, float]]:
+    """
+    Normaliza X para caber no retângulo do plot, mantendo aspecto e CENTRALIZANDO.
+
+    Retorna:
+      Yn: pontos em pixels
+      tf: (xmin, ymin, xmax, ymax, s, ox, oy)
+        onde:
+          s  = escala
+          ox = offset x (origem do bloco útil)
+          oy = offset y (origem do bloco útil)
+    """
     xmin, ymin = float(X[:, 0].min()), float(X[:, 1].min())
     xmax, ymax = float(X[:, 0].max()), float(X[:, 1].max())
 
@@ -177,27 +179,29 @@ def normalize_to_rect(
     sy = (h - 2 * pad) / (ymax - ymin + 1e-9)
     s = min(sx, sy)
 
+    W = (xmax - xmin) * s
+    H = (ymax - ymin) * s
+
+    # centraliza o bloco útil dentro do plot
+    ox = x0 + (w - W) / 2.0
+    oy = y0 + (h - H) / 2.0
+
     Yn = (X - np.array([xmin, ymin])) * s
-    Yn[:, 0] = x0 + pad + Yn[:, 0]
-    Yn[:, 1] = y0 + h - pad - Yn[:, 1]
-    return Yn, (xmin, ymin, xmax, ymax)
+    Yn[:, 0] = ox + Yn[:, 0]
+    Yn[:, 1] = oy + (H - Yn[:, 1])  # inverte Y dentro do bloco útil
+
+    return Yn, (xmin, ymin, xmax, ymax, s, ox, oy)
 
 
 def to_plot(
     pt: np.ndarray,
-    rect: Tuple[float, float, float, float],
-    plot: Tuple[float, float, float, float],
-    pad: float = 24.0,
+    tf: Tuple[float, float, float, float, float, float, float],
 ) -> Tuple[float, float]:
-    xmin, ymin, xmax, ymax = rect
-    x0, y0, w, h = plot
+    xmin, ymin, xmax, ymax, s, ox, oy = tf
+    H = (ymax - ymin) * s
 
-    sx = (w - 2 * pad) / (xmax - xmin + 1e-9)
-    sy = (h - 2 * pad) / (ymax - ymin + 1e-9)
-    s = min(sx, sy)
-
-    x = x0 + pad + (pt[0] - xmin) * s
-    y = y0 + h - pad - (pt[1] - ymin) * s
+    x = ox + (pt[0] - xmin) * s
+    y = oy + (H - (pt[1] - ymin) * s)
     return float(x), float(y)
 
 
@@ -267,20 +271,9 @@ def perceptron_with_pocket_snaps(
     w_star: np.ndarray,
     b_star: float,
 ) -> List[Snap]:
-    """
-    Perceptron padrão (online):
-      se erra: w <- w + lr*y*x ; b <- b + lr*y
-    Pocket:
-      guarda (w_best,b_best) com melhor acurácia observada.
-
-    Correção-chave:
-      inicializa w,b invertidos em relação ao professor para garantir updates (evita 0 updates).
-    """
-    # inicialização deliberadamente "ruim" (invertida)
     w = (-w_star).astype(float).copy()
     b = float(-b_star)
 
-    # micro-ruído para evitar empates/linhas degeneradas em seeds específicas
     w += rng.normal(0.0, 0.02, size=w.shape)
     b += float(rng.normal(0.0, 0.02))
 
@@ -294,16 +287,8 @@ def perceptron_with_pocket_snaps(
     updates = 0
 
     snaps.append(
-        Snap(
-            w=w.copy(),
-            b=b,
-            w_best=w_best.copy(),
-            b_best=b_best,
-            best_acc=best_acc,
-            cur_acc=cur_acc,
-            updates=updates,
-            epoch=0,
-        )
+        Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+             best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=0)
     )
 
     for ep in range(1, epochs + 1):
@@ -329,16 +314,8 @@ def perceptron_with_pocket_snaps(
 
                 if updates % SNAP_EVERY_UPDATES == 0:
                     snaps.append(
-                        Snap(
-                            w=w.copy(),
-                            b=b,
-                            w_best=w_best.copy(),
-                            b_best=b_best,
-                            best_acc=best_acc,
-                            cur_acc=cur_acc,
-                            updates=updates,
-                            epoch=ep,
-                        )
+                        Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                             best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=ep)
                     )
 
         if SNAP_EVERY_EPOCH:
@@ -349,23 +326,13 @@ def perceptron_with_pocket_snaps(
                 b_best = b
 
             snaps.append(
-                Snap(
-                    w=w.copy(),
-                    b=b,
-                    w_best=w_best.copy(),
-                    b_best=b_best,
-                    best_acc=best_acc,
-                    cur_acc=cur_acc,
-                    updates=updates,
-                    epoch=ep,
-                )
+                Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                     best_acc=best_acc, cur_acc=cur_acc, updates=updates, epoch=ep)
             )
 
-        # se separável e já atingiu 100% no pocket, pode parar
         if best_acc >= 0.999:
             break
 
-    # fallback: se por algum motivo raro updates==0, reinicializa 1 vez
     if snaps[-1].updates == 0:
         w = rng.normal(0.0, 0.6, size=(2,))
         b = float(rng.normal(0.0, 0.4))
@@ -373,12 +340,9 @@ def perceptron_with_pocket_snaps(
         w_best = w.copy()
         b_best = b
         best_acc = cur_acc
-        snaps = [
-            Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
-                 best_acc=best_acc, cur_acc=cur_acc, updates=0, epoch=0)
-        ]
+        snaps = [Snap(w=w.copy(), b=b, w_best=w_best.copy(), b_best=b_best,
+                      best_acc=best_acc, cur_acc=cur_acc, updates=0, epoch=0)]
 
-    # remove duplicados pelo pocket/acc
     cleaned = [snaps[0]]
     for s in snaps[1:]:
         p = cleaned[-1]
@@ -399,7 +363,6 @@ def main() -> None:
     seed = seed_from_today()
     rng = np.random.default_rng(seed)
 
-    # Layout
     inner_x, inner_y = CARD_PAD, CARD_PAD
     inner_w, inner_h = CANVAS_W - 2 * CARD_PAD, CANVAS_H - 2 * CARD_PAD
 
@@ -409,7 +372,6 @@ def main() -> None:
     plot_h = inner_h - 44
     plot = (plot_x0, plot_y0, plot_w, plot_h)
 
-    # Dataset
     X, y, w_star, b_star = gen_dataset_teacher(
         rng,
         n_total=N_TOTAL,
@@ -418,12 +380,13 @@ def main() -> None:
         label_flip_p=LABEL_FLIP_P,
     )
 
-    Xv, rect = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
+    # Normalização CENTRALIZADA (corrige viés à esquerda)
+    Xv, tf = normalize_to_rect(X, plot_x0, plot_y0, plot_w, plot_h, pad=24.0)
+    xmin, ymin, xmax, ymax, _s, _ox, _oy = tf
+    rect = (xmin, ymin, xmax, ymax)
 
-    # Treino
     snaps = perceptron_with_pocket_snaps(X, y, EPOCHS, LR, rng, w_star, b_star)
 
-    # Pacing (pelo pocket, pois é o que a barra usa)
     weights = []
     for i in range(len(snaps) - 1):
         s0, s1 = snaps[i], snaps[i + 1]
@@ -444,12 +407,10 @@ def main() -> None:
         for sf in range(nsub):
             t = sf / float(nsub)
 
-            # interpola pocket (linha exibida principal)
             w_best = lerp(s0.w_best, s1.w_best, t)
             b_best = float((1.0 - t) * s0.b_best + t * s1.b_best)
             best_acc = float((1.0 - t) * s0.best_acc + t * s1.best_acc)
 
-            # interpola atual (para linha secundária)
             w_cur = lerp(s0.w, s1.w, t)
             b_cur = float((1.0 - t) * s0.b + t * s1.b)
             cur_acc = float((1.0 - t) * s0.cur_acc + t * s1.cur_acc)
@@ -457,7 +418,6 @@ def main() -> None:
             im = Image.new("RGB", (CANVAS_W, CANVAS_H), BG)
             dr = ImageDraw.Draw(im)
 
-            # Card
             dr.rounded_rectangle(
                 [inner_x, inner_y, inner_x + inner_w, inner_y + inner_h],
                 radius=16, fill=CARD, outline=STROKE, width=2
@@ -467,12 +427,10 @@ def main() -> None:
             dr.text((inner_x + 210, inner_y + 20),
                     f"epoch={s0.epoch} | updates={s0.updates}",
                     fill=MUTED, font=FONT)
-
             dr.text((inner_x + 210, inner_y + 36),
                     f"seed={seed}",
                     fill=MUTED, font=FONT)
 
-            # Barra: best_acc (monótona não-decrescente por definição do pocket)
             bar_x, bar_y, bar_w, bar_h = inner_x + 22, inner_y + 50, LEFT_W - 44, 12
             dr.rounded_rectangle([bar_x, bar_y, bar_x + bar_w, bar_y + bar_h],
                                  radius=8, fill=BAR_BG, outline=STROKE)
@@ -488,11 +446,10 @@ def main() -> None:
             sep_txt = "separável" if LABEL_FLIP_P == 0.0 else "não separável (ruído de rótulo)"
             dr.text(
                 (inner_x + 22, inner_y + 92),
-                f"dataset: {sep_txt} | margin={MARGIN:.2f} | flip_p={LABEL_FLIP_P:.2f}",
+                f"dataset: {sep_txt} | margin={MARGIN:.4f} | flip_p={LABEL_FLIP_P:.2f}",
                 fill=(120, 135, 155), font=FONT
             )
 
-            # Legenda
             lx, ly = inner_x + 22, inner_y + 122
             dr.rectangle([lx, ly - 10, lx + 12, ly + 2], fill=C_POS)
             dr.text((lx + 18, ly - 12), "y=+1", fill=MUTED, font=FONT)
@@ -505,30 +462,25 @@ def main() -> None:
                 fill=(120, 135, 155), font=FONT
             )
 
-            # Plot BG
             dr.rounded_rectangle(
                 [plot_x0 - 12, plot_y0 - 12, plot_x0 + plot_w + 12, plot_y0 + plot_h + 12],
                 radius=14, fill=(11, 18, 32), outline=STROKE
             )
 
-            # Pontos
             r = POINT_R
             for idx, (px, py) in enumerate(Xv):
                 dr.ellipse([px - r, py - r, px + r, py + r], fill=(C_POS if y[idx] == 1 else C_NEG))
 
-            # Linha pocket (verde)
             pA, pB = decision_line_points(w_best, b_best, rect)
-            ax, ay = to_plot(pA, rect, plot, pad=24.0)
-            bx, by = to_plot(pB, rect, plot, pad=24.0)
+            ax, ay = to_plot(pA, tf)
+            bx, by = to_plot(pB, tf)
             dr.line([ax, ay, bx, by], fill=C_LINE_POCKET, width=LINE_W)
 
-            # Linha atual (azul claro)
             pA2, pB2 = decision_line_points(w_cur, b_cur, rect)
-            ax2, ay2 = to_plot(pA2, rect, plot, pad=24.0)
-            bx2, by2 = to_plot(pB2, rect, plot, pad=24.0)
+            ax2, ay2 = to_plot(pA2, tf)
+            bx2, by2 = to_plot(pB2, tf)
             dr.line([ax2, ay2, bx2, by2], fill=C_LINE_CUR, width=2)
 
-            # Rodapé
             dr.text(
                 (inner_x + 22, inner_y + inner_h - 26),
                 f"pocket w=[{w_best[0]: .2f}, {w_best[1]: .2f}]  b={b_best: .2f}",
@@ -537,7 +489,6 @@ def main() -> None:
 
             images.append(im)
 
-    # Hold final
     if images:
         final = images[-1]
         for _ in range(HOLD_LAST):
