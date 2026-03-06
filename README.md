@@ -29,3 +29,6 @@
 
 ### Hopfield Network
 <img src="./assets/hopfield.gif" width="980" />
+
+### PCA (Principal Component Analysis)
+![PCA](assets/pca.gif)
