@@ -20,3 +20,6 @@
 
 ### Self-Organizing Map (SOM)
 ![Self-Organizing Map](assets/som.gif)
+
+### Gaussian Naive Bayes
+![Gaussian Naive Bayes](assets/naive_bayes.gif)
