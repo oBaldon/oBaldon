@@ -23,3 +23,6 @@
 
 ### Gaussian Naive Bayes
 ![Gaussian Naive Bayes](assets/naive_bayes.gif)
+
+### SVM (maximum margin)
+![SVM](assets/svm.gif)
