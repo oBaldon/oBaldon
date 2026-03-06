@@ -85,9 +85,7 @@ A atualização ocorre automaticamente através de:
 .github/workflows/
 ```
 
-O planejamento das próximas visualizações pode ser encontrado em:
-
-[📍 ROADMAP.md](./ROADMAP.md)
+Veja também: [Roadmap de futuras visualizações](./ROADMAP.md)
 
 ---
 
