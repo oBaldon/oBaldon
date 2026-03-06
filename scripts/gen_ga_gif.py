@@ -35,7 +35,7 @@ GRID_H = 170
 CONTOUR_LEVELS = 11
 
 # GIF pacing (principal mudança)
-TWEEN_PER_GEN = 12      # <<< aumenta duração/legibilidade (6..12 é bom)
+TWEEN_PER_GEN = 20      # <<< aumenta duração/legibilidade (6..12 é bom)
 HOLD_GEN0 = 10         # frames extras no começo
 FRAME_MS = 55
 HOLD_LAST = 14
