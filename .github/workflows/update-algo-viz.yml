@@ -51,6 +51,7 @@ jobs:
           python scripts/gen_gradient_descent_gif.py
           python scripts/gen_ga_gif.py
           python scripts/gen_decision_tree_gif.py
+          python scripts/gen_som_gif.py
 
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5

@@ -17,3 +17,6 @@
 
 ### Decision Tree
 ![Decision Tree](assets/decision_tree.gif)
+
+### Self-Organizing Map (SOM)
+![Self-Organizing Map](assets/som.gif)
