@@ -54,6 +54,7 @@ jobs:
           python scripts/gen_som_gif.py
           python scripts/gen_naive_bayes_gif.py
           python scripts/gen_svm_gif.py
+          python scripts/gen_hopfield_gif.py
           
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5

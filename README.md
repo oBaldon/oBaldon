@@ -26,3 +26,6 @@
 
 ### SVM (maximum margin)
 ![SVM](assets/svm.gif)
+
+### Hopfield Network
+<img src="./assets/hopfield.gif" width="980" />
