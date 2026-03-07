@@ -56,7 +56,7 @@ jobs:
           python scripts/gen_svm_gif.py
           python scripts/gen_hopfield_gif.py
           python scripts/gen_pca_gif.py
-          python scripts/gen_tsne_gif.py
+          python scripts/gen_tsne_umap_gif.py
           
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
