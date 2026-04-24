@@ -1,11 +1,10 @@
+## Algoritmos clássicos de Inteligência Artificial em ação
 
-## Aprecie algoritmos clássicos de Inteligência Artificial em ação
+Neste perfil, compartilho **visualizações animadas de algoritmos fundamentais de Inteligência Artificial e Machine Learning**.
 
-Este perfil apresenta **visualizações animadas de algoritmos fundamentais de IA e Machine Learning**.
+A ideia é mostrar, de forma didática, **como cada algoritmo evolui ao longo do tempo** — encontrando caminhos, separando classes, organizando clusters ou projetando dados de alta dimensão.
 
-Cada animação mostra, de forma didática, **como o algoritmo evolui ao longo do tempo** — seja encontrando um caminho, separando classes, organizando clusters ou projetando dados de alta dimensão.
-
-Os GIFs são gerados automaticamente por **scripts Python** e atualizados via **GitHub Actions**.
+Os GIFs são gerados automaticamente por **scripts Python** e atualizados periodicamente via **GitHub Actions**.
 
 ---
 
