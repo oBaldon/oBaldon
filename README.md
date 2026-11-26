@@ -1,104 +1,46 @@
-## Algoritmos clássicos de Inteligência Artificial em ação
+<p align="center">
+  <img src="assets/profile-header.svg" alt="Douglas Baldon — sistemas, dados e inteligência artificial" width="100%">
+</p>
 
-Neste perfil, compartilho **visualizações animadas de algoritmos fundamentais de Inteligência Artificial e Machine Learning**.
+### Olá, eu sou Douglas.
 
-A ideia é mostrar, de forma didática, **como cada algoritmo evolui ao longo do tempo** — encontrando caminhos, separando classes, organizando clusters ou projetando dados de alta dimensão.
+Exploro a construção de sistemas que transformam dados e conhecimento em ferramentas úteis. Meu trabalho passa por **inteligência artificial, recuperação de informação, engenharia de software e automação** — da ingestão de documentos à experiência de quem usa o produto.
 
-Os GIFs são gerados automaticamente por **scripts Python** e atualizados periodicamente via **GitHub Actions**.
+Gosto de entender o problema por inteiro: a origem dos dados, as decisões de arquitetura e os detalhes que tornam uma solução confiável no mundo real.
 
----
+<br>
 
-## 🔎 Busca
+## Projetos em destaque
 
-### A* (pathfinding)
-![A*](assets/astar.gif)
+**01 &nbsp; [InteliReg RAG Service](https://github.com/oBaldon/rag-service)**<br>
+Recuperação de informação regulatória com API, indexação e busca semântica. Uma peça de um ecossistema que conecta documentos a consultas contextualizadas.<br>
+<sub>PYTHON · FASTAPI · POSTGRESQL · EMBEDDINGS</sub>
 
----
+**02 &nbsp; [Bulário Service](https://github.com/oBaldon/bulario-service)**<br>
+Pipeline para descoberta, ingestão, versionamento e extração de texto de bulas, com atenção à integridade e à rastreabilidade documental.<br>
+<sub>PYTHON · PIPELINES DE DADOS · DOCUMENTOS · POSTGRESQL</sub>
 
-## 🤖 Aprendizado supervisionado
+**03 &nbsp; [YourVoice](https://github.com/oBaldon/yourvoice)**<br>
+Experimento de comunicação por voz no navegador, com salas efêmeras e conexões diretas via WebRTC. O projeto está em desenvolvimento.<br>
+<sub>TYPESCRIPT · WEBRTC · WEBSOCKETS · DOCKER</sub>
 
-### Perceptron (primeira rede neural)
-![Perceptron](assets/perceptron.gif)
+**04 &nbsp; [Audio Transcriber Service](https://github.com/oBaldon/audio-transcriber-service)**<br>
+Serviço de transcrição de áudio com Whisper, alinhamento de palavras e identificação de locutores.<br>
+<sub>PYTHON · FASTAPI · WHISPER · PROCESSAMENTO DE ÁUDIO</sub>
 
-### Gradient Descent (logistic regression)
-![Gradient Descent](assets/gradient_descent.gif)
+[Explorar todos os repositórios →](https://github.com/oBaldon?tab=repositories)
 
-### Gaussian Naive Bayes
-![Gaussian Naive Bayes](assets/naive_bayes.gif)
+<br>
 
-### SVM (maximum margin)
-![SVM](assets/svm.gif)
+## Áreas de interesse
 
-### Decision Tree
-![Decision Tree](assets/decision_tree.gif)
+**Inteligência aplicada** &nbsp; / &nbsp; LLMs, busca semântica, RAG e processamento de linguagem<br>
+**Engenharia de dados** &nbsp; / &nbsp; ingestão, pipelines, documentos e rastreabilidade<br>
+**Construção de sistemas** &nbsp; / &nbsp; APIs, arquitetura, integração e automação<br>
+**Experiências em tempo real** &nbsp; / &nbsp; voz, redes e comunicação entre navegadores
 
----
-
-## 🧠 Aprendizado não supervisionado
-
-### K-Means (clusterização)
-![K-means](assets/kmeans.gif)
-
-### Self-Organizing Map (SOM)
-![Self-Organizing Map](assets/som.gif)
-
-### PCA (Principal Component Analysis)
-![PCA](assets/pca.gif)
-
-### t-SNE / UMAP (projeção 2D)
-![t-SNE / UMAP](assets/tsne_umap.gif)
+<br>
 
 ---
 
-## 🧬 Computação evolutiva
-
-### Genetic Algorithm (Rastrigin optimization)
-![Genetic Algorithm](assets/genetic.gif)
-
----
-
-## 🧩 Redes neurais clássicas
-
-### Hopfield Network (recuperação de padrões)
-<img src="assets/hopfield.gif" width="980">
-
----
-
-## Como os GIFs são gerados
-
-Todos os GIFs são produzidos automaticamente por scripts Python em:
-
-```
-scripts/
-```
-
-Os resultados são exportados para:
-
-```
-assets/
-```
-
-A atualização ocorre automaticamente através de:
-
-```
-.github/workflows/
-```
-
-Veja também: [Roadmap de futuras visualizações](./ROADMAP.md)
-
----
-
-## Objetivo
-
-Construir uma **coleção visual de algoritmos fundamentais de Inteligência Artificial**, útil para:
-
-- ensino de Machine Learning
-- visualização de conceitos algorítmicos
-- documentação técnica
-- exploração educacional de IA
-
----
-
-> **“O humano sente para compreender porque precisa,  
-> a IA compreende sem sentir porque pode.”**  
-> — *Douglas Baldon*
+<sub>DOUGLAS BALDON &nbsp; / &nbsp; <a href="https://github.com/oBaldon">@OBALDON</a> &nbsp; / &nbsp; CONSTRUINDO, APRENDENDO E COMPARTILHANDO.</sub>

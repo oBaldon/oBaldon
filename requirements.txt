@@ -1,3 +1,0 @@
-# Adicione aqui dependências Python necessárias para gerar visualizações
-numpy>=1.26
-Pillow>=10.0
